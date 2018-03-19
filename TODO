@@ -1,0 +1,11 @@
+3. Check yarn status, bail if "out of sync" -- ???
+9. execute / build / copy assets
+
+Various Go-based dependencies:
+1. quicktemplate dependency
+2. bindata dependency
+3. xgettext dependency
+
+----
+
+asset-gen update (updates assets)

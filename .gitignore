@@ -1,0 +1,17 @@
+/assetgen
+/assetgen.exe
+
+# ignore vendored deps
+/vendor
+
+# generated assets
+/.cache
+/yarn*
+/.*rc
+/node_modules
+/package.json
+/yarn.lock
+/package-lock.json
+/*.anko
+/assets
+/build
