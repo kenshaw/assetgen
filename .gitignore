@@ -7,7 +7,7 @@
 # generated assets
 /.cache
 /yarn*
-/.*rc
+/.yarn*
 /node_modules
 /package.json
 /yarn.lock

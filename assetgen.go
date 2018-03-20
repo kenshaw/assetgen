@@ -128,26 +128,14 @@ func Assetgen(flags *Flags) error {
 	if flags.Yarn == "" {
 		flags.Yarn, err = exec.LookPath("yarn")
 		if err != nil {
-			return errors.New("yarn not in PATH")
+			return errors.New("yarn executable not in PATH")
 		}
 	}
 
-	// check yarn version
-	err = checkYarnVer(flags)
+	// check setupt
+	err = checkSetup(flags)
 	if err != nil {
 		return err
-	}
-
-	// ensure primary directories exist
-	err = checkDirs(flags)
-	if err != nil {
-		return fmt.Errorf("could not create directories: %v", err)
-	}
-
-	// setup files
-	err = setupFiles(flags)
-	if err != nil {
-		return fmt.Errorf("unable to setup files: %v", err)
 	}
 
 	// load script
@@ -157,10 +145,10 @@ func Assetgen(flags *Flags) error {
 	}
 
 	// setup dependencies
-	/*err = s.ConfigDeps()
+	err = s.ConfigDeps()
 	if err != nil {
 		return fmt.Errorf("unable to configure dependencies: %v", err)
-	}*/
+	}
 
 	// fix links in node/.bin directory
 	err = fixNodeBinLinks(flags)
@@ -177,16 +165,36 @@ func Assetgen(flags *Flags) error {
 	return nil
 }
 
-// checkYarnVer checks the yarn version.
-func checkYarnVer(flags *Flags) error {
-	// get yarn version and check its valid
-	yarnVer, err := runCombined(flags, "yarn", "--version")
+// checkSetup checks that yarn is the correct version, and all necessary files
+// and directories exist as expected.
+func checkSetup(flags *Flags) error {
+	// check yarn version
+	yarnVer, err := runCombined(flags, flags.Yarn, "--version")
 	if err != nil {
 		return fmt.Errorf("unable to determine yarn version: %v", err)
 	}
 	if !compareSemver(strings.TrimPrefix(yarnVer, "v"), yarnConstraint) {
-		return fmt.Errorf("yarn version must be %s, currently: %s", yarnConstraint, yarnVer)
+		return fmt.Errorf("%s version must be %s, currently: %s", flags.Yarn, yarnConstraint, yarnVer)
 	}
+
+	// ensure primary directories exist
+	err = checkDirs(flags)
+	if err != nil {
+		return fmt.Errorf("could not create directories: %v", err)
+	}
+
+	// setup files
+	err = setupFiles(flags)
+	if err != nil {
+		return fmt.Errorf("unable to setup files: %v", err)
+	}
+
+	// run yarn check
+	err = runSilent(flags, flags.Yarn, "check")
+	if err != nil {
+		return errors.New("yarn is out of sync: please run yarn manually")
+	}
+
 	return nil
 }
 

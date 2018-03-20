@@ -173,7 +173,7 @@ func (s *Script) addLocales(n, dir string) {
 // minifies them and normalizes templated i18n translation calls (T) before
 // passing the template through the quicktemplate compiler (qtc).
 //
-// Note :adds the appropriate dependency requirements to script's deps.
+// Note adds the appropriate dependency requirements to script's deps.
 func (s *Script) addTemplates(n, dir string) {
 
 }
