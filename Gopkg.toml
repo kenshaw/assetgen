@@ -1,0 +1,9 @@
+[prune]
+  non-go = true
+  go-tests = true
+  unused-packages = true
+
+[[constraint]]
+  branch = "refactor-parser"
+  name = "github.com/valyala/quicktemplate"
+  source = "github.com/kenshaw/quicktemplate.git"

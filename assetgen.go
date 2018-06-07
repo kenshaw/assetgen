@@ -71,7 +71,7 @@ func Assetgen(flags *Flags) error {
 	}
 	wd, err := realpath.Realpath(flags.Wd)
 	if err != nil {
-		return fmt.Errorf("could determine real path for %s: %v", flags.Wd, err)
+		return fmt.Errorf("could not determine real path for %s: %v", flags.Wd, err)
 	}
 	flags.Wd = wd
 

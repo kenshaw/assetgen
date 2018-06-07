@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/mattn/anko/vm"
+
+	qtcparser "github.com/valyala/quicktemplate/parser"
 )
 
 // dep wraps package dependency information.
@@ -35,21 +39,6 @@ type Script struct {
 
 	// post are the post setup steps to be executed in order.
 	post []func() error
-}
-
-// concat is the script handler to concat one or more files.
-func (s *Script) concat(params ...interface{}) {
-	s.exec = append(s.exec, func() error {
-		return nil
-	})
-}
-
-// js is the script handler to generate a minified javascript file from one or
-// more files.
-func (s *Script) js(params ...interface{}) {
-	s.exec = append(s.exec, func() error {
-		return nil
-	})
 }
 
 // LoadScript loads an assetgen script using the specified flags.
@@ -123,6 +112,21 @@ func LoadScript(flags *Flags) (*Script, error) {
 	return s, nil
 }
 
+// concat is the script handler to concat one or more files.
+func (s *Script) concat(params ...interface{}) {
+	s.exec = append(s.exec, func() error {
+		return nil
+	})
+}
+
+// js is the script handler to generate a minified javascript file from one or
+// more files.
+func (s *Script) js(params ...interface{}) {
+	s.exec = append(s.exec, func() error {
+		return nil
+	})
+}
+
 // addFonts configures a script step for packing static font files.
 //
 // This walks the fonts directory, and if there's a SCSS/CSS file, add it to
@@ -156,6 +160,11 @@ func (s *Script) addImages(n, dir string) {
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
+
+	s.exec = append(s.exec, func() error {
+		log.Printf("DOING IMAGEMIN")
+		return nil
+	})
 }
 
 // addLocales configures a script step for packing locales data.
@@ -172,10 +181,52 @@ func (s *Script) addLocales(n, dir string) {
 // This looks at the templates directory, and if there are any .html files,
 // minifies them and normalizes templated i18n translation calls (T) before
 // passing the template through the quicktemplate compiler (qtc).
-//
-// Note adds the appropriate dependency requirements to script's deps.
-func (s *Script) addTemplates(n, dir string) {
+func (s *Script) addTemplates(_, dir string) {
+	s.exec = append(s.exec, func() error {
+		wd, err := os.Getwd()
+		if err != nil {
+			return err
+		}
 
+		err = filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case fi.IsDir() || !strings.HasSuffix(n, ".html"):
+				return nil
+			}
+
+			// open input
+			r, err := os.OpenFile(n, os.O_RDONLY, 0)
+			if err != nil {
+				return err
+			}
+			defer r.Close()
+
+			// open output
+			w, err := os.OpenFile(n+".go", os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
+			if err != nil {
+				return err
+			}
+			defer w.Close()
+
+			d := filepath.Dir(n)
+			if err = os.Chdir(d); err != nil {
+				return err
+			}
+
+			return qtcparser.Parse(w, r, filepath.Base(n), filepath.Base(d))
+		})
+		if err != nil {
+			defer func() {
+				if err := os.Chdir(wd); err != nil {
+					panic(err)
+				}
+			}()
+			return err
+		}
+		return os.Chdir(wd)
+	})
 }
 
 // ConfigDeps handles configuring dependencies.
@@ -216,5 +267,11 @@ func (s *Script) ConfigDeps() error {
 
 // Execute executes the script.
 func (s *Script) Execute() error {
+	var err error
+	for _, f := range s.exec {
+		if err = f(); err != nil {
+			return err
+		}
+	}
 	return nil
 }

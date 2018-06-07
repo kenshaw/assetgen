@@ -117,8 +117,7 @@ const (
   "private": true,
   "cacheDirectories": [%s
   ],
-  "dependencies": {
-  }
+  "dependencies": {}
 }`
 
 	// scriptTemplate is the default $ASSETS/assets.anko contents.
