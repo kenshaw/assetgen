@@ -1,11 +1,11 @@
 package assetgen
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -160,9 +160,7 @@ func (s *Script) addImages(n, dir string) {
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
-
 	s.exec = append(s.exec, func() error {
-		log.Printf("DOING IMAGEMIN")
 		return nil
 	})
 }
@@ -182,7 +180,12 @@ func (s *Script) addLocales(n, dir string) {
 // minifies them and normalizes templated i18n translation calls (T) before
 // passing the template through the quicktemplate compiler (qtc).
 func (s *Script) addTemplates(_, dir string) {
+	// add htmlmin dependency
+	s.nodeDeps = append(s.nodeDeps, dep{"html-minifier", ""})
+
 	s.exec = append(s.exec, func() error {
+		var err error
+
 		wd, err := os.Getwd()
 		if err != nil {
 			return err
@@ -196,12 +199,15 @@ func (s *Script) addTemplates(_, dir string) {
 				return nil
 			}
 
-			// open input
-			r, err := os.OpenFile(n, os.O_RDONLY, 0)
+			// read and minimize
+			buf, err := ioutil.ReadFile(n)
 			if err != nil {
 				return err
 			}
-			defer r.Close()
+			min, err := htmlmin(s.flags, buf)
+			if err != nil {
+				return err
+			}
 
 			// open output
 			w, err := os.OpenFile(n+".go", os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
@@ -210,12 +216,20 @@ func (s *Script) addTemplates(_, dir string) {
 			}
 			defer w.Close()
 
+			// change to the directory (necessary for qtc's parser to work)
 			d := filepath.Dir(n)
 			if err = os.Chdir(d); err != nil {
 				return err
 			}
 
-			return qtcparser.Parse(w, r, filepath.Base(n), filepath.Base(d))
+			// generate go template
+			if err = qtcparser.Parse(w, bytes.NewReader(min), filepath.Base(n), filepath.Base(d)); err != nil {
+				return err
+			}
+
+			// TODO: handle locales + messages
+
+			return nil
 		})
 		if err != nil {
 			defer func() {

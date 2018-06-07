@@ -185,3 +185,42 @@ func forceString(v interface{}) string {
 	}
 	return ""
 }
+
+// htmlmin passes the supplied byte slice to html-minifier's stdin, returning
+// the output.
+func htmlmin(flags *Flags, buf []byte) ([]byte, error) {
+	cmd := exec.Command(
+		"html-minifier",
+		"--collapse-boolean-attributes",
+		"--collapse-whitespace",
+		"--remove-comments",
+		"--remove-attribute-quotes",
+		"--remove-script-type-attributes",
+		"--remove-style-link-type-attributes",
+		"--minify-css",
+		"--minify-js",
+		`--ignore-custom-fragments="\\{%[^%]+%\\}"`,
+		"--trim-custom-fragments",
+	)
+	cmd.Dir, cmd.Stdin = flags.Wd, bytes.NewReader(buf)
+	out, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	defer out.Close()
+
+	if err = cmd.Start(); err != nil {
+		return nil, err
+	}
+
+	buf, err = ioutil.ReadAll(out)
+	if err != nil {
+		return nil, err
+	}
+
+	if err = cmd.Wait(); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
