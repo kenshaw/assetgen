@@ -80,6 +80,11 @@ func Assetgen(flags *Flags) error {
 		return errors.New("workers must be at least 1")
 	}
 
+	// ensure valid trans func name
+	if !isValidIdentifier(flags.TFuncName) {
+		return errors.New("invalid trans func name")
+	}
+
 	// ensure paths are set
 	if flags.Cache == "" {
 		flags.Cache = filepath.Join(flags.Wd, cacheDir)

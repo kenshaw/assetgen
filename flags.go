@@ -27,6 +27,8 @@ type Flags struct {
 	//NoUpdate bool
 
 	Workers int
+
+	TFuncName string
 }
 
 // NewFlags creates a set of flags for use by assetgen.
@@ -57,7 +59,9 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 	//fs.StringVar(&f.Env, "env", os.Getenv("ENV"), "environment")
 	//fs.BoolVar(&f.NoUpdate, "noupdate", false, "no update")
 
-	fs.IntVar(&f.Workers, "workers", runtime.NumCPU()+1, "workers")
+	fs.IntVar(&f.Workers, "workers", runtime.NumCPU()+1, "number of workers")
+
+	fs.StringVar(&f.TFuncName, "trans", "T", "trans func name")
 
 	return fs
 }

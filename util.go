@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/Masterminds/semver"
 )
@@ -223,4 +224,25 @@ func htmlmin(flags *Flags, buf []byte) ([]byte, error) {
 	}
 
 	return buf, nil
+}
+
+// isValidIdentifier determines if s is a valid Go identifier.
+func isValidIdentifier(s string) bool {
+	if len(s) == 0 || !unicode.IsLetter([]rune(s[0:1])[0]) {
+		return false
+	}
+
+	for _, ch := range s {
+		if !isIdentifierChar(ch) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isIdentifierChar returns true if ch is a valid identifier character.
+func isIdentifierChar(ch rune) bool {
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch) ||
+		'0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch)
 }

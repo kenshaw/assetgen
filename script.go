@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/mattn/anko/vm"
@@ -191,6 +192,8 @@ func (s *Script) addTemplates(_, dir string) {
 			return err
 		}
 
+		tMatchRE, tFixRE, space := regexp.MustCompile(s.flags.TFuncName+"\\(`[^`]+`"), regexp.MustCompile(`\s+`), []byte(" ")
+
 		err = filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
 			switch {
 			case err != nil:
@@ -209,13 +212,6 @@ func (s *Script) addTemplates(_, dir string) {
 				return err
 			}
 
-			// open output
-			w, err := os.OpenFile(n+".go", os.O_APPEND|os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
-			if err != nil {
-				return err
-			}
-			defer w.Close()
-
 			// change to the directory (necessary for qtc's parser to work)
 			d := filepath.Dir(n)
 			if err = os.Chdir(d); err != nil {
@@ -223,13 +219,17 @@ func (s *Script) addTemplates(_, dir string) {
 			}
 
 			// generate go template
-			if err = qtcparser.Parse(w, bytes.NewReader(min), filepath.Base(n), filepath.Base(d)); err != nil {
+			out := new(bytes.Buffer)
+			if err = qtcparser.Parse(out, bytes.NewReader(min), filepath.Base(n), filepath.Base(d)); err != nil {
 				return err
 			}
 
-			// TODO: handle locales + messages
+			// fix T(``) strings
+			buf = tMatchRE.ReplaceAllFunc(out.Bytes(), func(b []byte) []byte {
+				return tFixRE.ReplaceAll(b, space)
+			})
 
-			return nil
+			return ioutil.WriteFile(n+".go", buf, 0644)
 		})
 		if err != nil {
 			defer func() {
