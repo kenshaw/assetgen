@@ -2,37 +2,51 @@
 
 
 [[projects]]
+  digest = "1:a26f8da48b22e6176c1c6a2459904bb30bd0c49ada04b2963c2c3a203e81a620"
   name = "github.com/Masterminds/semver"
   packages = ["."]
+  pruneopts = "NUT"
   revision = "c7af12943936e8c39859482e61f0574c2fd7fc75"
   version = "v1.4.2"
 
 [[projects]]
+  digest = "1:f002675bdbca75955ff65515999878c0f0fed77d5c2e0a7bae18024f84c68262"
   name = "github.com/mattn/anko"
   packages = [
     "ast",
+    "internal/corelib",
     "parser",
-    "vm"
+    "vm",
   ]
-  revision = "e9c5c0ca86cf129292c56ddbddc4fff027844d65"
-  version = "v0.0.4"
+  pruneopts = "NUT"
+  revision = "cdc3b7317d35b9d24257e5f5079b3bac4d52705a"
+  version = "v0.0.6"
 
 [[projects]]
   branch = "refactor-parser"
+  digest = "1:5f1eae9e942824d619ae3646bf397cec57b33a8ffe054ad65aba9dd2ce5bfc55"
   name = "github.com/valyala/quicktemplate"
   packages = ["parser"]
-  revision = "e59fcc6aea561438a8a93d86a8a3ece6ab432027"
+  pruneopts = "NUT"
+  revision = "858b3c39b2550a9ee31c5efa9c04176c3ead9a64"
   source = "github.com/kenshaw/quicktemplate.git"
 
 [[projects]]
-  branch = "master"
+  digest = "1:2d26e80b161e74492ee6278bc1d7b33a3380ddc5266d65a52affeb4f84f1de07"
   name = "github.com/yookoala/realpath"
   packages = ["."]
+  pruneopts = "NUT"
   revision = "d19ef9c409d9817c1e685775e53d361b03eabbc8"
+  version = "v1.0.0"
 
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "a154ce4ade2c7c624a5015e924706ee3fa93e6f6694eb6fa5bfc88aef4ac7ac0"
+  input-imports = [
+    "github.com/Masterminds/semver",
+    "github.com/mattn/anko/vm",
+    "github.com/valyala/quicktemplate/parser",
+    "github.com/yookoala/realpath",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1
