@@ -339,9 +339,12 @@ func (s *Script) addSass(_, dir string) {
 
 	s.exec = append(s.exec, func() error {
 		// write temporary manifest
-		err := ioutil.WriteFile(s.flags.Build+"/manifest.json", []byte("{}"), 0644)
+		manifest, err := s.dist.ManifestBytes()
 		if err != nil {
-			return fmt.Errorf("could not write sass.js: %v", err)
+			return fmt.Errorf("could not generate manifest: %v", err)
+		}
+		if err = ioutil.WriteFile(s.flags.Build+"/manifest.json", manifest, 0644); err != nil {
+			return fmt.Errorf("could not write manifest.json: %v", err)
 		}
 
 		// write sass.js to build dir

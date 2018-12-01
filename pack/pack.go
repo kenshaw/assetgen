@@ -2,6 +2,8 @@ package pack
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -18,6 +20,7 @@ import (
 type Pack struct {
 	pkg string
 	fs  afero.Fs
+	h   map[string]string
 }
 
 // New creates a new binary asset packer.
@@ -25,6 +28,7 @@ func New(pkg string) *Pack {
 	return &Pack{
 		pkg: pkg,
 		fs:  afero.NewMemMapFs(),
+		h:   make(map[string]string),
 	}
 }
 
@@ -35,6 +39,7 @@ func (p *Pack) Add(name string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
+
 	err = p.fs.MkdirAll(filepath.Dir(name), 0755)
 	if err != nil {
 		return err
@@ -45,7 +50,13 @@ func (p *Pack) Add(name string, r io.Reader) error {
 	}
 	defer f.Close()
 	_, err = f.Write(buf)
-	return err
+	if err != nil {
+		return err
+	}
+
+	h := md5.Sum(buf)
+	p.h[name] = hex.EncodeToString(h[:])
+	return nil
 }
 
 // AddFile adds a file with name to the output with the contents of the file at path.
@@ -70,7 +81,23 @@ func (p *Pack) AddString(name string, s string) error {
 
 // Manifest returns a manifest of the packed file data.
 func (p *Pack) Manifest() (map[string]string, error) {
-	return nil, nil
+	m := make(map[string]string)
+	err := afero.Walk(p.fs, "/", func(n string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case fi.IsDir():
+			return nil
+		}
+		h := md5.Sum([]byte(strings.TrimLeft(n, "/")))
+		fh := hex.EncodeToString(h[:])
+		m[n] = fh[:6] + "." + p.h[n][:6] + filepath.Ext(n)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // ManifestBytes returns a JSON-encoded version of the file manifest.
