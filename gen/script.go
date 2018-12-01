@@ -669,8 +669,13 @@ func ReverseManifest() map[string]string {
 	return vfsgen۰rev
 }
 
-// AssetPath returns the asset path for name.
+// ManifestPath returns the asset path for name.
 func AssetPath(name string) string {
+	return vfsgen۰manifest[name]
+}
+
+// ReversePath returns the manifest path for name.
+func ReversePath(name string) string {
 	return vfsgen۰rev[name]
 }`
 )
