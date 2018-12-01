@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	yarnConstraint = ">=1.9.x, <1.10"
+	yarnConstraint = ">=1.12.x, <1.13"
 	yarnRcName     = ".yarnrc"
 
 	cacheDir   = ".cache"
