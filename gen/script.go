@@ -18,6 +18,7 @@ import (
 	"github.com/mattn/anko/vm"
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/tools/imports"
 
 	"github.com/brankas/assetgen/pack"
 )
@@ -535,5 +536,85 @@ func (s *Script) Execute() error {
 			return err
 		}
 	}
-	return s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets")
+
+	if err = s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets"); err != nil {
+		return err
+	}
+
+	manifest, err := s.dist.Manifest()
+	if err != nil {
+		return err
+	}
+	rev := make(map[string]string, len(manifest))
+	for k, v := range manifest {
+		rev[v] = k
+	}
+
+	fn := s.flags.Assets + "/manifest.go"
+	buf, err := imports.Process(fn, []byte(fmt.Sprintf(manifestTemplate, manifest, rev)), nil)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(fn, buf, 0644)
 }
+
+const (
+	manifestTemplate = `package assets
+
+import (
+	"fmt"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/shurcooL/httpfs/vfsutil"
+)
+
+// ManifestAssets returns the the manifest assets as http.FileSystem.
+var ManifestAssets = func() http.FileSystem {
+	fs := vfsgen۰FS{
+		"/": &vfsgen۰DirInfo{
+			name:    "/",
+			modTime: time.Time{},
+		},
+	}
+
+	manifest := Manifest()
+	err := vfsutil.Walk(Assets, "/", func(n string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case fi.IsDir():
+			return nil
+		}
+		fn, ok := manifest[n]
+		if !ok {
+			return fmt.Errorf("could not find path for %%s", n)
+		}
+		fn = "/" + fn
+		f, err := Assets.Open(n)
+		if err != nil {
+			return fmt.Errorf("no asset %%s", n)
+		}
+		fs[fn] = f
+		fs["/"].(*vfsgen۰DirInfo).entries = append(fs["/"].(*vfsgen۰DirInfo).entries, f.(os.FileInfo))
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+
+	return fs
+}()
+
+// Manifest returns the asset manifest.
+func Manifest() map[string]string {
+	return %#v
+}
+
+// ReverseManifest returns the reverse asset manifest.
+func ReverseManifest() map[string]string {
+	return %#v
+}`
+)

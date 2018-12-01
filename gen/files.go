@@ -132,6 +132,7 @@ const (
 
 	// assetsGitignoreTemplate is the default $ASSETS/.gitignore contents.
 	assetsGitignoreTemplate = `/assets.go
+/manifest.go
 /locales/locales.go
 /geoip/*.gz
 *.html.go

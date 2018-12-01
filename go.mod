@@ -10,7 +10,7 @@ require (
 	github.com/yookoala/realpath v1.0.0
 	golang.org/x/sync v0.0.0-20181108010431-42b317875d0f
 	golang.org/x/text v0.3.0 // indirect
-	golang.org/x/tools v0.0.0-20181201035826-d0ca3933b724 // indirect
+	golang.org/x/tools v0.0.0-20181201035826-d0ca3933b724
 )
 
 replace github.com/valyala/quicktemplate => github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9
