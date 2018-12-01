@@ -112,9 +112,10 @@ func (p *Pack) ManifestBytes() ([]byte, error) {
 // Pack packs binary assets.
 func (p *Pack) WriteTo(out, name string) error {
 	return vfsgen.Generate(p, vfsgen.Options{
-		VariableName: name,
-		Filename:     out,
-		PackageName:  p.pkg,
+		VariableName:  name,
+		Filename:      out,
+		PackageName:   p.pkg,
+		ForceAllTypes: true,
 	})
 }
 

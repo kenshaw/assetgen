@@ -17,6 +17,8 @@ github.com/josharian/impl v0.0.0-20180228163738-3d0f908298c4/go.mod h1:t4Tr0tn92
 github.com/jstemmer/gotags v1.4.1/go.mod h1:b6J3X0bsLbR4C5SgSx3V3KjuWTtmRzcmWPbTkWZ49PA=
 github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9 h1:zv74CGLaVMBOvXSpm7Pz+YUh+GNLp30FOqqXthiB0w0=
 github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9/go.mod h1:gQ6xge7CLsAD7rxCUUhvmCEtObxDmowL7GkcLuTYIh4=
+github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d h1:j9P9kKobGT3j/3MGaGDJeMIO/ybdbdiAyLDvkCtfwxQ=
+github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d/go.mod h1:XZL+TJ5XX1jr7vL1nNnD/WYQzZ8qPqFuFid5H+v9q30=
 github.com/kisielk/errcheck v1.1.0/go.mod h1:EZBBE59ingxPouuu3KfxchcWSUPOHkagtvWXihfKN4Q=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/asmfmt v1.2.0/go.mod h1:RAoUvqkWr2rUa2I19qKMEVZQe4BVtcHGTMCUOcCU2Lg=

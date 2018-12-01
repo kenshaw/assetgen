@@ -14,3 +14,5 @@ require (
 )
 
 replace github.com/valyala/quicktemplate => github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9
+
+replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d

@@ -546,10 +546,6 @@ func (s *Script) Execute() error {
 		rev[v] = k
 	}
 
-	if err = s.dist.AddBytes("ok", []byte(`ok`)); err != nil {
-		return err
-	}
-
 	if err = s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets"); err != nil {
 		return err
 	}
@@ -591,7 +587,7 @@ var ManifestAssets = func() http.FileSystem {
 		switch {
 		case err != nil:
 			return err
-		case fi.IsDir() || n == "/ok":
+		case fi.IsDir():
 			return nil
 		}
 
