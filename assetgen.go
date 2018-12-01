@@ -240,8 +240,14 @@ func checkDirs(flags *Flags) error {
 // fixNodeBinLinks walks all packages in flags.Node, reading their bin entries from
 // package.json, and creating the appropriate symlink in flags.NodeBin.
 func fixNodeBinLinks(flags *Flags) error {
+	// check dirs again
+	err := checkDirs(flags)
+	if err != nil {
+		return fmt.Errorf("unable to fix node bin directory: %v", err)
+	}
+
 	// erase all links in bin dir
-	err := filepath.Walk(flags.NodeBin, func(path string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(flags.NodeBin, func(path string, fi os.FileInfo, err error) error {
 		switch {
 		case err != nil:
 			return err
