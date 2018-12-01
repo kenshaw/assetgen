@@ -1,4 +1,4 @@
-package assetgen
+package gen
 
 import (
 	"flag"

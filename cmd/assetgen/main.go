@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brankas/assetgen"
+	"github.com/brankas/assetgen/gen"
 )
 
 func main() {
-	err := assetgen.Run()
-	if err != nil {
+	if err := gen.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
