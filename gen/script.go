@@ -537,10 +537,6 @@ func (s *Script) Execute() error {
 		}
 	}
 
-	if err = s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets"); err != nil {
-		return err
-	}
-
 	manifest, err := s.dist.Manifest()
 	if err != nil {
 		return err
@@ -548,6 +544,14 @@ func (s *Script) Execute() error {
 	rev := make(map[string]string, len(manifest))
 	for k, v := range manifest {
 		rev[v] = k
+	}
+
+	if err = s.dist.AddBytes("ok", []byte(`ok`)); err != nil {
+		return err
+	}
+
+	if err = s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets"); err != nil {
+		return err
 	}
 
 	fn := s.flags.Assets + "/manifest.go"
@@ -567,8 +571,10 @@ import (
 	"net/http"
 	"os"
 	"time"
+	"strings"
 
 	"github.com/shurcooL/httpfs/vfsutil"
+	"github.com/shurcooL/httpgzip"
 )
 
 // ManifestAssets returns the the manifest assets as http.FileSystem.
@@ -585,20 +591,39 @@ var ManifestAssets = func() http.FileSystem {
 		switch {
 		case err != nil:
 			return err
-		case fi.IsDir():
+		case fi.IsDir() || n == "/ok":
 			return nil
 		}
+
+		f, ok := Assets.(vfsgen۰FS)[n]
+		if !ok {
+			return fmt.Errorf("no asset %%s", n)
+		}
+
 		fn, ok := manifest[n]
 		if !ok {
 			return fmt.Errorf("could not find path for %%s", n)
 		}
 		fn = "/" + fn
-		f, err := Assets.Open(n)
-		if err != nil {
-			return fmt.Errorf("no asset %%s", n)
+
+		var z interface{}
+		switch x := f.(type) {
+		case *vfsgen۰CompressedFileInfo:
+			z = &vfsgen۰CompressedFileInfo{
+				name: fn,
+				modTime: x.modTime,
+				compressedContent: x.compressedContent,
+				uncompressedSize: x.uncompressedSize,
+			}
+		case *vfsgen۰FileInfo:
+			z = &vfsgen۰FileInfo{
+				name: x.name,
+				modTime: x.modTime,
+				content: x.content,
+			}
 		}
-		fs[fn] = f
-		fs["/"].(*vfsgen۰DirInfo).entries = append(fs["/"].(*vfsgen۰DirInfo).entries, f.(os.FileInfo))
+		fs[fn] = z
+		fs["/"].(*vfsgen۰DirInfo).entries = append(fs["/"].(*vfsgen۰DirInfo).entries, z.(os.FileInfo))
 		return nil
 	})
 	if err != nil {
@@ -607,6 +632,27 @@ var ManifestAssets = func() http.FileSystem {
 
 	return fs
 }()
+
+type vfsgen۰Handler struct {
+	h http.Handler
+}
+
+func (h *vfsgen۰Handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+	z, u := *req, *req.URL
+	z.URL = &u
+	z.URL.Path = strings.TrimPrefix(z.URL.Path, "/_")
+	h.h.ServeHTTP(res, &z)
+}
+
+// StaticHandler returns a static asset handler, with f handling any errors
+// encountered.
+func StaticHandler(f func(http.ResponseWriter, *http.Request, error)) http.Handler {
+	return &vfsgen۰Handler{
+		h: httpgzip.FileServer(ManifestAssets, httpgzip.FileServerOptions{
+			ServeError: f,
+		}),
+	}
+}
 
 // Manifest returns the asset manifest.
 func Manifest() map[string]string {
