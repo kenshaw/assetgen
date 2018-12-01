@@ -115,6 +115,9 @@ const (
   "description": %q,
   "license": "UNLICENSED",
   "private": true,
+  "browserslist": [
+    "> 5%%"
+  ],
   "cacheDirectories": [%s
   ],
   "dependencies": {}
@@ -133,4 +136,18 @@ const (
 /geoip/*.gz
 *.html.go
 *.mo`
+
+	// sassJsTemplate is the default $BUILD/sass.js contents.
+	sassJsTemplate = `var sass = require('node-sass');
+var manifest = require('./manifest.json');
+
+module.exports = {
+  'asset($url)': function(url) {
+    var v = url.getValue();
+    if (manifest[v] !== undefined) {
+      return sass.types.String("url('/_/" + manifest[v] + "')");
+    }
+    return url;
+  }
+}`
 )

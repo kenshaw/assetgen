@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/shurcooL/vfsgen"
@@ -29,7 +30,12 @@ func New(pkg string) *Pack {
 
 // Add adds a file with name to pack from r.
 func (p *Pack) Add(name string, r io.Reader) error {
+	name = "/" + strings.TrimLeft(name, "/")
 	buf, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+	err = p.fs.MkdirAll(filepath.Dir(name), 0755)
 	if err != nil {
 		return err
 	}

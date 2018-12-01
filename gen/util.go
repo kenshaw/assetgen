@@ -2,6 +2,8 @@ package gen
 
 import (
 	"bytes"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,10 +25,22 @@ func warnf(flags *Flags, s string, v ...interface{}) {
 	}
 }
 
+// formatCommand formats the command output
+func formatCommand(name string, params ...string) string {
+	paramstr := " " + strings.Join(params, " ")
+	if (len(paramstr) + len(name)) >= 40 {
+		paramstr = ""
+		for _, p := range params {
+			paramstr += " \\\n  " + p
+		}
+	}
+	return name + paramstr
+}
+
 // run runs command name with params.
 func run(flags *Flags, name string, params ...string) error {
 	if flags.Verbose {
-		fmt.Fprintf(os.Stdout, "%s %s\n", name, strings.Join(params, " "))
+		fmt.Fprintln(os.Stdout, formatCommand(name, params...))
 	}
 	cmd := exec.Command(name, params...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
@@ -37,7 +51,7 @@ func run(flags *Flags, name string, params ...string) error {
 // runSilent runs command name with params silently (ie, stdout is discarded).
 func runSilent(flags *Flags, name string, params ...string) error {
 	if flags.Verbose {
-		fmt.Fprintf(os.Stdout, "%s %s\n", name, strings.Join(params, " "))
+		fmt.Fprintln(os.Stdout, formatCommand(name, params...))
 	}
 	cmd := exec.Command(name, params...)
 	cmd.Dir = flags.Wd
@@ -48,7 +62,7 @@ func runSilent(flags *Flags, name string, params ...string) error {
 // output of stdout and stderr.
 func runCombined(flags *Flags, name string, params ...string) (string, error) {
 	if flags.Verbose {
-		fmt.Fprintf(os.Stdout, "%s %s\n", name, strings.Join(params, " "))
+		fmt.Fprintln(os.Stdout, formatCommand(name, params...))
 	}
 	cmd := exec.Command(name, params...)
 	cmd.Dir = flags.Wd
@@ -203,7 +217,8 @@ func htmlmin(flags *Flags, buf []byte) ([]byte, error) {
 		`--ignore-custom-fragments="\\{%[^%]+%\\}"`,
 		"--trim-custom-fragments",
 	)
-	cmd.Dir, cmd.Stdin = flags.Wd, bytes.NewReader(buf)
+	cmd.Stdin = bytes.NewReader(buf)
+	cmd.Dir = flags.Wd
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -245,4 +260,14 @@ func isValidIdentifier(s string) bool {
 func isIdentifierChar(ch rune) bool {
 	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch) ||
 		'0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch)
+}
+
+// md5hash returns the md5 hash of the contents of file in hex format.
+func md5hash(file string) (string, error) {
+	buf, err := ioutil.ReadFile(file)
+	if err != nil {
+		return "", err
+	}
+	sum := md5.Sum(buf)
+	return hex.EncodeToString(sum[:]), nil
 }

@@ -2,6 +2,7 @@ package gen
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,10 +15,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/brankas/assetgen/pack"
 	"github.com/mattn/anko/vm"
-
 	qtcparser "github.com/valyala/quicktemplate/parser"
+	"golang.org/x/sync/errgroup"
+
+	"github.com/brankas/assetgen/pack"
 )
 
 // dep wraps package dependency information.
@@ -36,8 +38,8 @@ type Script struct {
 	// deps are package dependencies.
 	nodeDeps []dep
 
-	// sassIncludes are sass include dependencies.
-	sassIncludes []dep
+	// sassIncludes are sass include directories.
+	sassIncludes []string
 
 	// pre are the pre setup steps to be executed in order.
 	pre []func() error
@@ -47,6 +49,9 @@ type Script struct {
 
 	// post are the post setup steps to be executed in order.
 	post []func() error
+
+	// dist is the assets to distribute (ie, pack).
+	dist *pack.Pack
 }
 
 // LoadScript loads an assetgen script using the specified flags.
@@ -63,6 +68,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	s := &Script{
 		flags: flags,
 		logf:  log.Printf,
+		dist:  pack.New("assets"),
 	}
 
 	// create scripting runtime
@@ -101,6 +107,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"fonts", s.addFonts},
 		{"geoip", s.addGeoip},
 		{"images", s.addImages},
+		{"sass", s.addSass},
 		{"locales", s.addLocales},
 		{"templates", s.addTemplates},
 	} {
@@ -141,7 +148,7 @@ func (s *Script) getAndPack(dest, src, name string) error {
 
 	// write packed data
 	p := pack.New(filepath.Base(filepath.Dir(dest)))
-	p.AddBytes("/"+filepath.Base(src), buf)
+	p.AddBytes(filepath.Base(src), buf)
 	return p.WriteTo(dest, name)
 }
 
@@ -164,7 +171,7 @@ func (s *Script) js(params ...interface{}) {
 //
 // This walks the fonts directory, and if there's a SCSS/CSS file, add it to
 // sass import path. All font files will be added to the manifest.
-func (s *Script) addFonts(n, dir string) {
+func (s *Script) addFonts(_, dir string) {
 }
 
 // addGeoip configures a script step for packing geoip data.
@@ -172,9 +179,9 @@ func (s *Script) addFonts(n, dir string) {
 // This looks at the geoip directory, and if there is no geoip data, downloads
 // the appropriate file (if it doesn't exist), and adds the file to the packed
 // data (but not to the manifest).
-func (s *Script) addGeoip(n, dir string) {
+func (s *Script) addGeoip(_, dir string) {
 	s.exec = append(s.exec, func() error {
-		path := filepath.Join(dir, n+".go")
+		path := filepath.Join(dir, "geoip.go")
 		fi, err := os.Stat(path)
 		if err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("could not stat %s: %v", path, err)
@@ -190,6 +197,8 @@ func (s *Script) addGeoip(n, dir string) {
 	})
 }
 
+var imageExtRE = regexp.MustCompile(`(?i)\.(jpe?g|gif|png|svg|mp4|json)$`)
+
 // addImages configures a script step for optimizing and packing image files.
 //
 // This walks the images directory, and if there's any image files, generates
@@ -197,7 +206,7 @@ func (s *Script) addGeoip(n, dir string) {
 // of the original image) and adds the optimized image to the manifest.
 //
 // Note: adds the appropriate dependency requirements to script's deps.
-func (s *Script) addImages(n, dir string) {
+func (s *Script) addImages(_, dir string) {
 	for _, n := range []string{
 		"imagemin-cli",
 		"imagemin-gifsicle",
@@ -207,8 +216,198 @@ func (s *Script) addImages(n, dir string) {
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
+
 	s.exec = append(s.exec, func() error {
+		cacheDir := s.flags.Cache + "/images/"
+
+		// ensure image caching dir exists
+		err := os.MkdirAll(cacheDir, 0755)
+		if err != nil {
+			return err
+		}
+
+		// accumulate images
+		var all, changed []string
+		err = filepath.Walk(dir, func(n string, f os.FileInfo, err error) error {
+			// skip non images
+			if !imageExtRE.MatchString(f.Name()) {
+				return nil
+			}
+
+			// hash
+			fn := strings.TrimPrefix(n, dir+"/")
+			hash, err := md5hash(n)
+			if err != nil {
+				return err
+			}
+			hashPath := cacheDir + fn + ".md5"
+
+			var cached string
+
+			// read cached hash
+			_, err = os.Stat(hashPath)
+			switch {
+			case err != nil && !os.IsNotExist(err):
+				return err
+			case err != nil && os.IsNotExist(err):
+			case err == nil:
+				buf, err := ioutil.ReadFile(hashPath)
+				if err != nil {
+					return err
+				}
+				cached = string(buf)
+			}
+
+			all = append(all, fn)
+			if cached == "" || cached != hash {
+				changed = append(changed, fn)
+			}
+			return ioutil.WriteFile(hashPath, []byte(hash), 0644)
+		})
+		if err != nil {
+			return err
+		}
+
+		ch := make(chan string, len(changed))
+		for _, fn := range changed {
+			ch <- fn
+		}
+		close(ch)
+
+		// start workers to optimize images
+		eg, ctxt := errgroup.WithContext(context.Background())
+		for i := 0; i < s.flags.Workers; i++ {
+			eg.Go(func() error {
+				for {
+					select {
+					case <-ctxt.Done():
+						return ctxt.Err()
+					case fn := <-ch:
+						if fn == "" {
+							return nil
+						}
+						if err := s.optimizeImage(cacheDir+fn, dir+"/"+fn); err != nil {
+							return err
+						}
+					}
+				}
+			})
+		}
+		if err = eg.Wait(); err != nil {
+			return err
+		}
+
+		// pack the generated images
+		for _, fn := range all {
+			if err := s.dist.AddFile("images/"+fn, cacheDir+fn); err != nil {
+				return err
+			}
+		}
 		return nil
+	})
+}
+
+// optimizeImage optimizes a single image.
+func (s *Script) optimizeImage(out, in string) error {
+	var plugin string
+	switch filepath.Ext(strings.ToLower(in))[1:] {
+	case "jpg", "jpeg":
+		plugin = "--plugin=guetzli"
+	case "svg":
+		plugin = "--plugin=svgo"
+	case "png":
+		plugin = "--plugin=pngquant"
+	case "gif":
+		plugin = "--plugin=gifsicle"
+	}
+	return runSilent(s.flags, "imagemin", plugin, "--out-dir="+filepath.Dir(out), in)
+}
+
+// addSass configures a script step for compiling and minifying sass assets.
+//
+// This walks the sass directory, and if there's any .scss files, generates the
+// appropriate css after compiling, prefixing, and minifying.
+func (s *Script) addSass(_, dir string) {
+	for _, n := range []string{
+		"node-sass",
+		"postcss-cli",
+		"autoprefixer",
+		"clean-css-cli",
+	} {
+		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
+	}
+
+	s.exec = append(s.exec, func() error {
+		// write temporary manifest
+		err := ioutil.WriteFile(s.flags.Build+"/manifest.json", []byte("{}"), 0644)
+		if err != nil {
+			return fmt.Errorf("could not write sass.js: %v", err)
+		}
+
+		// write sass.js to build dir
+		err = ioutil.WriteFile(s.flags.Build+"/sass.js", []byte(sassJsTemplate+"\n"), 0644)
+		if err != nil {
+			return fmt.Errorf("could not write sass.js: %v", err)
+		}
+
+		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case fi.IsDir() || filepath.Dir(n) != dir || strings.HasPrefix(n, "_") || !strings.HasSuffix(n, "scss"):
+				return nil
+			}
+
+			// build node-sass params
+			fn := strings.TrimSuffix(filepath.Base(n), ".scss")
+			params := []string{
+				"--quiet",
+				"--source-comments",
+				"--source-map-contents",
+				"--source-map=" + s.flags.Build + "/css/" + fn + ".css.map",
+				"--functions=" + s.flags.Build + "/sass.js",
+				"--output=" + s.flags.Build + "/css",
+			}
+			for _, z := range s.sassIncludes {
+				params = append(params, "--include-path="+z)
+			}
+
+			// run node-sass
+			err = runSilent(s.flags, "node-sass", append(params, n)...)
+			if err != nil {
+				return fmt.Errorf("could not run node-sass: %v", err)
+			}
+
+			// autoprefixer
+			err = runSilent(
+				s.flags,
+				"postcss",
+				"--use=autoprefixer",
+				"--map",
+				"--output="+s.flags.Build+"/css/"+fn+".postcss.css",
+				s.flags.Build+"/css/"+fn+".css",
+			)
+			if err != nil {
+				return fmt.Errorf("could not run postcss: %v", err)
+			}
+
+			// cleancss
+			err = runSilent(
+				s.flags,
+				"cleancss",
+				"-O2",
+				"--format='specialComments:0;processImport:0'",
+				"--source-map",
+				"--skip-rebase",
+				"--output="+s.flags.Build+"/css/"+fn+".cleancss.css",
+				s.flags.Build+"/css/"+fn+".postcss.css",
+			)
+			if err != nil {
+				return fmt.Errorf("could not run cleancss: %v", err)
+			}
+
+			return s.dist.AddFile("css/"+fn+".css", s.flags.Build+"/css/"+fn+".cleancss.css")
+		})
 	})
 }
 
@@ -333,5 +532,5 @@ func (s *Script) Execute() error {
 			return err
 		}
 	}
-	return nil
+	return s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets")
 }

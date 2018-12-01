@@ -21,7 +21,6 @@ const (
 
 	cacheDir   = ".cache"
 	buildDir   = "build"
-	distDir    = "dist"
 	nodeDir    = "node_modules"
 	nodeBinDir = ".bin"
 	assetsDir  = "assets"
@@ -94,9 +93,6 @@ func Assetgen(flags *Flags) error {
 	if flags.Build == "" {
 		flags.Build = filepath.Join(flags.Wd, buildDir)
 	}
-	if flags.Dist == "" {
-		flags.Dist = filepath.Join(flags.Build, distDir)
-	}
 	if flags.Node == "" {
 		flags.Node = filepath.Join(flags.Cache, nodeDir)
 	}
@@ -143,6 +139,12 @@ func Assetgen(flags *Flags) error {
 	err = checkSetup(flags)
 	if err != nil {
 		return err
+	}
+
+	// set NODE_PATH
+	err = os.Setenv("NODE_PATH", flags.Node)
+	if err != nil {
+		return fmt.Errorf("could not set NODE_PATH: %v", err)
 	}
 
 	// load script
@@ -209,7 +211,7 @@ func checkSetup(flags *Flags) error {
 // subdirectories of the working directory.
 func checkDirs(flags *Flags) error {
 	// make required directories
-	for _, d := range []*string{&flags.Cache, &flags.Build, &flags.Dist, &flags.Node, &flags.NodeBin, &flags.Assets} {
+	for _, d := range []*string{&flags.Cache, &flags.Build, &flags.Node, &flags.NodeBin, &flags.Assets} {
 		v, err := filepath.Abs(*d)
 		if err != nil {
 			return fmt.Errorf("could not resolve path %q", *d)

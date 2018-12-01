@@ -15,7 +15,6 @@ type Flags struct {
 
 	Cache string
 	Build string
-	Dist  string
 
 	Node    string
 	NodeBin string
@@ -50,9 +49,8 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 
 	fs.StringVar(&f.Cache, "cache", "", "cache directory")
 	fs.StringVar(&f.Build, "build", "", "build directory")
-	fs.StringVar(&f.Dist, "dist", "", "distribution directory")
 
-	fs.StringVar(&f.Node, "node", "", "node path")
+	fs.StringVar(&f.Node, "node", "", "node modules path")
 	fs.StringVar(&f.NodeBin, "node-bin", "", "node bin path")
 
 	fs.StringVar(&f.Assets, "assets", "", "assets directory")
