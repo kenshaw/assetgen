@@ -124,7 +124,8 @@ const (
 	scriptTemplate = `# generated placeholder script 
 
 # js("js/app.js", ...)
-# sass("css/app.css", ...)`
+# sass("css/app.css", ...)
+# googlefont("font1", "font2", ...)`
 
 	// assetsGitignoreTemplate is the default $ASSETS/.gitignore contents.
 	assetsGitignoreTemplate = `/assets.go

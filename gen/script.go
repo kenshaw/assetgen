@@ -6,11 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
+	"github.com/brankas/assetgen/pack"
 	"github.com/mattn/anko/vm"
 
 	qtcparser "github.com/valyala/quicktemplate/parser"
@@ -25,6 +29,9 @@ type dep struct {
 // Script wraps an assetgen script.
 type Script struct {
 	flags *Flags
+
+	// logf is the log func.
+	logf func(string, ...interface{})
 
 	// deps are package dependencies.
 	nodeDeps []dep
@@ -55,6 +62,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	// create
 	s := &Script{
 		flags: flags,
+		logf:  log.Printf,
 	}
 
 	// create scripting runtime
@@ -113,6 +121,30 @@ func LoadScript(flags *Flags) (*Script, error) {
 	return s, nil
 }
 
+// get retrieves src.
+func (s *Script) get(src string) ([]byte, error) {
+	res, err := http.Get(src)
+	if err != nil {
+		return nil, fmt.Errorf("could not retrieve %q: %v", src, err)
+	}
+	defer res.Body.Close()
+	return ioutil.ReadAll(res.Body)
+}
+
+// getAndPack retrieves src and writes it to the dest file.
+func (s *Script) getAndPack(dest, src, name string) error {
+	s.logf("GET %s => %s", src, dest)
+	buf, err := s.get(src)
+	if err != nil {
+		return err
+	}
+
+	// write packed data
+	p := pack.New(filepath.Base(filepath.Dir(dest)))
+	p.AddBytes("/"+filepath.Base(src), buf)
+	return p.WriteTo(dest, name)
+}
+
 // concat is the script handler to concat one or more files.
 func (s *Script) concat(params ...interface{}) {
 	s.exec = append(s.exec, func() error {
@@ -141,7 +173,21 @@ func (s *Script) addFonts(n, dir string) {
 // the appropriate file (if it doesn't exist), and adds the file to the packed
 // data (but not to the manifest).
 func (s *Script) addGeoip(n, dir string) {
+	s.exec = append(s.exec, func() error {
+		path := filepath.Join(dir, n+".go")
+		fi, err := os.Stat(path)
+		if err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("could not stat %s: %v", path, err)
+		}
 
+		// bail if data isn't stale
+		if err == nil && s.flags.Ttl != 0 && !time.Now().After(fi.ModTime().Add(s.flags.Ttl)) {
+			return nil
+		}
+
+		// download and cache
+		return s.getAndPack(path, geoipURL, "Geoip")
+	})
 }
 
 // addImages configures a script step for optimizing and packing image files.

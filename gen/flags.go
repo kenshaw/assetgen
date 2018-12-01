@@ -3,6 +3,7 @@ package gen
 import (
 	"flag"
 	"runtime"
+	"time"
 )
 
 // Flags holds config flags for generating static assets.
@@ -22,7 +23,9 @@ type Flags struct {
 	Assets string
 	Script string
 
-	//Ttl      time.Duration
+	ManifestName string
+
+	Ttl time.Duration
 	//Env string
 	//NoUpdate bool
 
@@ -55,7 +58,9 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 	fs.StringVar(&f.Assets, "assets", "", "assets directory")
 	fs.StringVar(&f.Script, "script", "", "script file")
 
-	//fs.DurationVar(&f.Ttl, "ttl", 24*7*time.Hour, "ttl on updating static asset files")
+	fs.StringVar(&f.ManifestName, "manifest-name", "%s[:4]%s[:4]%s", "manifest name")
+
+	fs.DurationVar(&f.Ttl, "ttl", 24*7*time.Hour, "ttl for long-lived assets (geoip)")
 	//fs.StringVar(&f.Env, "env", os.Getenv("ENV"), "environment")
 	//fs.BoolVar(&f.NoUpdate, "noupdate", false, "no update")
 

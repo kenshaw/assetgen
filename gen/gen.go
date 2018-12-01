@@ -37,6 +37,8 @@ const (
 	jsDir        = "js"
 	sassDir      = "sass"
 	templatesDir = "templates"
+
+	geoipURL = "https://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"
 )
 
 // Run generates assets using the current working directory and default flags.
