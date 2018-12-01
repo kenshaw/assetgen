@@ -654,13 +654,23 @@ func StaticHandler(f func(http.ResponseWriter, *http.Request, error)) http.Handl
 	}
 }
 
+var (
+	vfsgen۰manifest = %#v
+	vfsgen۰rev = %#v
+)
+
 // Manifest returns the asset manifest.
 func Manifest() map[string]string {
-	return %#v
+	return vfsgen۰manifest
 }
 
 // ReverseManifest returns the reverse asset manifest.
 func ReverseManifest() map[string]string {
-	return %#v
+	return vfsgen۰rev
+}
+
+// AssetPath returns the asset path for name.
+func AssetPath(name string) string {
+	return vfsgen۰rev[name]
 }`
 )
