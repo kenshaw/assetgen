@@ -497,7 +497,7 @@ func (s *Script) ConfigDeps() error {
 	}
 
 	var v struct {
-		Dependencies map[string]string `json:"dependencies"`
+		Deps map[string]string `json:"dependencies"`
 	}
 	err = json.Unmarshal(buf, &v)
 	if err != nil {
@@ -508,7 +508,7 @@ func (s *Script) ConfigDeps() error {
 	params := []string{"add", "--no-progress", "--silent"}
 	var add bool
 	for _, d := range s.nodeDeps {
-		if _, ok := v.Dependencies[d.name]; ok {
+		if _, ok := v.Deps[d.name]; ok {
 			continue
 		}
 		pkg := d.name
