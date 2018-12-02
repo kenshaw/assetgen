@@ -164,6 +164,7 @@ func (s *Script) concat(params ...interface{}) {
 func (s *Script) js(fn string, params ...string) {
 	for _, n := range []string{
 		"uglify-js",
+		"source-map",
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
