@@ -2,6 +2,7 @@ package gen
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -16,6 +17,8 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/semver"
+	"github.com/shurcooL/httpfs/vfsutil"
+	"github.com/shurcooL/httpgzip"
 )
 
 // warnf handles issuing warnings.
@@ -270,4 +273,58 @@ func md5hash(file string) (string, error) {
 	}
 	sum := md5.Sum(buf)
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// templates are loaded file assets used by assetgen.
+var templates map[string]string
+
+func init() {
+	// walk and add all template assets
+	templates = make(map[string]string)
+	err := vfsutil.Walk(files, "/", func(n string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case fi.IsDir():
+			return nil
+		}
+		f, err := files.Open(n)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+
+		var buf []byte
+		switch x := f.(type) {
+		case httpgzip.GzipByter:
+			r, err := gzip.NewReader(bytes.NewReader(x.GzipBytes()))
+			if err != nil {
+				return err
+			}
+			buf, err = ioutil.ReadAll(r)
+			if err != nil {
+				return err
+			}
+		case httpgzip.NotWorthGzipCompressing:
+			buf, err = ioutil.ReadAll(f)
+			if err != nil {
+				return err
+			}
+		}
+
+		templates[strings.TrimPrefix(n, "/")] = string(buf)
+		return nil
+	})
+	if err != nil {
+		panic(err)
+	}
+}
+
+// tplf loads the named template, and fmt.Sprintf's v.
+func tplf(name string, v ...interface{}) string {
+	tpl, ok := templates[name]
+	if !ok {
+		panic(fmt.Sprintf("could not load template: %s", name))
+	}
+	return fmt.Sprintf(tpl, v...)
 }

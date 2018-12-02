@@ -32,10 +32,10 @@ func setupFiles(flags *Flags) error {
 
 	// create files if not present
 	for _, d := range []struct{ path, contents string }{
-		{filepath.Join(flags.Wd, yarnRcName), fmt.Sprintf(yarnRcTemplate, nodepath)},
-		{filepath.Join(flags.Wd, "package.json"), fmt.Sprintf(packageJsonTemplate, app, app+" app", cacheList)},
-		{filepath.Join(flags.Assets, ".gitignore"), assetsGitignoreTemplate},
-		{filepath.Join(flags.Assets, scriptName), scriptTemplate},
+		{filepath.Join(flags.Wd, yarnRcName), tplf("yarnrc", nodepath)},
+		{filepath.Join(flags.Wd, "package.json"), tplf("package.json", app, app+" app", cacheList)},
+		{filepath.Join(flags.Assets, ".gitignore"), tplf("gitignore")},
+		{filepath.Join(flags.Assets, scriptName), tplf("sass.js")},
 	} {
 		err = writeCond(d.path, d.contents)
 		if err != nil {
@@ -103,52 +103,3 @@ func writeCond(path, contents string) error {
 	}
 	return nil
 }
-
-const (
-	// yarnRcTemplate is the default $CWD/.yarnrc contents.
-	yarnRcTemplate = `--modules-folder %q
---*.no-bin-links true`
-
-	// packageJsonTemplate is the default $CWD/package.json contents.
-	packageJsonTemplate = `{
-  "name": %q,
-  "description": %q,
-  "license": "UNLICENSED",
-  "private": true,
-  "browserslist": [
-    "> 5%%"
-  ],
-  "cacheDirectories": [%s
-  ],
-  "dependencies": {}
-}`
-
-	// scriptTemplate is the default $ASSETS/assets.anko contents.
-	scriptTemplate = `# generated placeholder script 
-
-# js("js/app.js", ...)
-# sass("css/app.css", ...)
-# googlefont("font1", "font2", ...)`
-
-	// assetsGitignoreTemplate is the default $ASSETS/.gitignore contents.
-	assetsGitignoreTemplate = `/assets.go
-/manifest.go
-/locales/locales.go
-/geoip/*.gz
-*.html.go
-*.mo`
-
-	// sassJsTemplate is the default $BUILD/sass.js contents.
-	sassJsTemplate = `var sass = require('node-sass');
-var manifest = require('./manifest.json');
-
-module.exports = {
-  'asset($url)': function(url) {
-    var v = url.getValue();
-    if (manifest[v] !== undefined) {
-      return sass.types.String("url('/_/" + manifest[v] + "')");
-    }
-    return url;
-  }
-}`
-)

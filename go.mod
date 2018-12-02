@@ -3,7 +3,8 @@ module github.com/brankas/assetgen
 require (
 	github.com/Masterminds/semver v1.4.2
 	github.com/mattn/anko v0.0.6
-	github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371 // indirect
+	github.com/shurcooL/httpfs v0.0.0-20171119174359-809beceb2371
+	github.com/shurcooL/httpgzip v0.0.0-20180522190206-b1c53ac65af9
 	github.com/shurcooL/vfsgen v0.0.0-20181020040650-a97a25d856ca
 	github.com/spf13/afero v1.1.2
 	github.com/valyala/quicktemplate v1.0.0

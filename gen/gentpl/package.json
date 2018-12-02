@@ -1,0 +1,12 @@
+{
+  "name": %q,
+  "description": %q,
+  "license": "UNLICENSED",
+  "private": true,
+  "browserslist": [
+    "> 5%%"
+  ],
+  "cacheDirectories": [%s
+  ],
+  "dependencies": {}
+}
