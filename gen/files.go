@@ -35,7 +35,7 @@ func setupFiles(flags *Flags) error {
 		{filepath.Join(flags.Wd, yarnRcName), tplf("yarnrc", nodepath)},
 		{filepath.Join(flags.Wd, "package.json"), tplf("package.json", app, app+" app", cacheList)},
 		{filepath.Join(flags.Assets, ".gitignore"), tplf("gitignore")},
-		{filepath.Join(flags.Assets, scriptName), tplf("sass.js")},
+		{filepath.Join(flags.Assets, scriptName), tplf("assets.anko")},
 	} {
 		err = writeCond(d.path, d.contents)
 		if err != nil {
