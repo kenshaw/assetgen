@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -116,14 +117,12 @@ func Assetgen(flags *Flags) error {
 	}*/
 
 	// set working directory
-	err = os.Chdir(flags.Wd)
-	if err != nil {
+	if err = os.Chdir(flags.Wd); err != nil {
 		return fmt.Errorf("could not change to dir: %v", err)
 	}
 
 	// set PATH
-	err = os.Setenv("PATH", flags.NodeBin+":"+os.Getenv("PATH"))
-	if err != nil {
+	if err = os.Setenv("PATH", flags.NodeBin+":"+os.Getenv("PATH")); err != nil {
 		return fmt.Errorf("could not set PATH: %v", err)
 	}
 
@@ -135,18 +134,15 @@ func Assetgen(flags *Flags) error {
 		}
 	}
 
-	// check setupt
-	err = checkSetup(flags)
-	if err != nil {
+	// check setup
+	if err = checkSetup(flags); err != nil {
 		return err
 	}
 
 	// set NODE_PATH
-	err = os.Setenv("NODE_PATH", flags.Node)
-	if err != nil {
+	if err = os.Setenv("NODE_PATH", flags.Node); err != nil {
 		return fmt.Errorf("could not set NODE_PATH: %v", err)
 	}
-
 	// load script
 	s, err := LoadScript(flags)
 	if err != nil {
@@ -154,20 +150,36 @@ func Assetgen(flags *Flags) error {
 	}
 
 	// setup dependencies
-	err = s.ConfigDeps()
-	if err != nil {
+	if err = s.ConfigDeps(); err != nil {
 		return fmt.Errorf("unable to configure dependencies: %v", err)
 	}
 
 	// fix links in node/.bin directory
-	err = fixNodeBinLinks(flags)
-	if err != nil {
+	if err = fixNodeBinLinks(flags); err != nil {
 		return fmt.Errorf("unable to fix bin links in %s: %v", flags.NodeBin, err)
 	}
 
-	// run script
-	err = s.Execute()
+	ctxt, cancel := context.WithCancel(context.Background())
+
+	// start callback server
+	sock, err := s.startCallbackServer(ctxt)
 	if err != nil {
+		return fmt.Errorf("could not start callback server: %v", err)
+	}
+	defer func() {
+		cancel()
+		if err := os.RemoveAll(filepath.Dir(sock)); err != nil {
+			warnf(flags, "could not remove %s: %v", sock, err)
+		}
+	}()
+
+	// set ASSETGEN_SOCK
+	if err = os.Setenv("ASSETGEN_SOCK", sock); err != nil {
+		return fmt.Errorf("could not set ASSETGEN_SOCK: %v", err)
+	}
+
+	// run script
+	if err = s.Execute(); err != nil {
 		return fmt.Errorf("could not run script: %v", err)
 	}
 

@@ -12,8 +12,9 @@ import (
 )
 
 var (
-	flagPkg  = flag.String("pkg", "github.com/brankas/assetgen/gen", "package")
-	flagFile = flag.String("file", "gentpl.go", "generated file name")
+	flagPkg = flag.String("pkg", "github.com/brankas/assetgen", "package")
+	flagDir = flag.String("dir", "gen/gentpl", "directory with files")
+	flagOut = flag.String("out", "gen/gentpl.go", "out file name")
 )
 
 func main() {
@@ -25,15 +26,16 @@ func main() {
 }
 
 func run() error {
-	p := pack.New(filepath.Base(*flagPkg))
+	pkg := filepath.Join(os.Getenv("GOPATH"), "src", *flagPkg)
+	out := filepath.Join(pkg, *flagOut)
 
-	dir := filepath.Join(os.Getenv("GOPATH"), "src", *flagPkg)
-	err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+	p := pack.New(filepath.Base(filepath.Dir(out)))
+	err := filepath.Walk(filepath.Join(pkg, *flagDir), func(n string, fi os.FileInfo, err error) error {
 		fn := filepath.Base(n)
 		switch {
 		case err != nil:
 			return err
-		case fi.IsDir() || fn == *flagFile:
+		case fi.IsDir() || fn == out:
 			return nil
 		}
 		return p.AddFile(fn, n)
@@ -41,6 +43,5 @@ func run() error {
 	if err != nil {
 		return err
 	}
-
-	return p.WriteTo(filepath.Join(dir, *flagFile), "files")
+	return p.WriteTo(out, "files")
 }

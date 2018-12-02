@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/imports"
 
+	"github.com/brankas/assetgen/gen/ipc"
 	"github.com/brankas/assetgen/pack"
 )
 
@@ -334,6 +335,7 @@ func (s *Script) addSass(_, dir string) {
 		"postcss-cli",
 		"autoprefixer",
 		"clean-css-cli",
+		"deasync",
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
@@ -367,8 +369,10 @@ func (s *Script) addSass(_, dir string) {
 			params := []string{
 				"--quiet",
 				"--source-comments",
-				"--source-map-contents",
-				"--source-map=" + s.flags.Build + "/css/" + fn + ".css.map",
+				"--source-map-embed",
+				//"--source-map-contents",
+				//"--source-map=" + s.flags.Build + "/css/" + fn + ".css.map",
+				//"--source-map-root=" + s.flags.Wd,
 				"--functions=" + s.flags.Build + "/sass.js",
 				"--output=" + s.flags.Build + "/css",
 			}
@@ -377,7 +381,7 @@ func (s *Script) addSass(_, dir string) {
 			}
 
 			// run node-sass
-			err = runSilent(s.flags, "node-sass", append(params, n)...)
+			err = run(s.flags, "node-sass", append(params, n)...)
 			if err != nil {
 				return fmt.Errorf("could not run node-sass: %v", err)
 			}
@@ -560,4 +564,42 @@ func (s *Script) Execute() error {
 		return err
 	}
 	return ioutil.WriteFile(fn, buf, 0644)
+}
+
+// startCallbackServer creates and starts the IPC callback server.
+func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
+	cbs, err := ipc.New(map[string]func(...interface{}) (interface{}, error){
+		// asset($url) converts the passed url to a static path.
+		"asset($url)": func(v ...interface{}) (interface{}, error) {
+			// check args
+			if len(v) != 1 {
+				return nil, errors.New("invalid number of args")
+			}
+			z, ok := v[0].(string)
+			if !ok {
+				return nil, errors.New("$url must be a string")
+			}
+
+			// grab manifest
+			m, err := s.dist.Manifest()
+			if err != nil {
+				return nil, fmt.Errorf("unable to load manifest: %v", err)
+			}
+
+			// find asset name
+			n, ok := m["/"+strings.TrimPrefix(z, "/")]
+			if !ok {
+				warnf(s.flags, "no asset %q in manifest", z)
+				n = fmt.Sprintf("__INV:%s__", z)
+			}
+			return fmt.Sprintf("url('/_/%s')", n), nil
+		},
+	})
+	if err != nil {
+		return "", err
+	}
+	if err = cbs.Run(ctxt); err != nil {
+		return "", err
+	}
+	return cbs.SocketPath(), nil
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/shurcooL/vfsgen"
 	"github.com/spf13/afero"
@@ -21,6 +22,8 @@ type Pack struct {
 	pkg string
 	fs  afero.Fs
 	h   map[string]string
+
+	sync.RWMutex
 }
 
 // New creates a new binary asset packer.
@@ -34,6 +37,9 @@ func New(pkg string) *Pack {
 
 // Add adds a file with name to pack from r.
 func (p *Pack) Add(name string, r io.Reader) error {
+	p.Lock()
+	defer p.Unlock()
+
 	name = "/" + strings.TrimLeft(name, "/")
 	buf, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -81,6 +87,9 @@ func (p *Pack) AddString(name string, s string) error {
 
 // Manifest returns a manifest of the packed file data.
 func (p *Pack) Manifest() (map[string]string, error) {
+	p.RLock()
+	defer p.RUnlock()
+
 	m := make(map[string]string)
 	err := afero.Walk(p.fs, "/", func(n string, fi os.FileInfo, err error) error {
 		switch {
@@ -111,6 +120,8 @@ func (p *Pack) ManifestBytes() ([]byte, error) {
 
 // Pack packs binary assets.
 func (p *Pack) WriteTo(out, name string) error {
+	p.RLock()
+	defer p.RUnlock()
 	return vfsgen.Generate(p, vfsgen.Options{
 		VariableName:  name,
 		Filename:      out,
@@ -121,5 +132,7 @@ func (p *Pack) WriteTo(out, name string) error {
 
 // Open satisfies the http.FileSystem interface.
 func (p *Pack) Open(name string) (http.File, error) {
+	p.RLock()
+	defer p.RUnlock()
 	return p.fs.Open(name)
 }
