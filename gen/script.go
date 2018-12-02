@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/mattn/anko/vm"
+
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/imports"
@@ -76,9 +77,6 @@ func LoadScript(flags *Flags) (*Script, error) {
 	// create scripting runtime
 	a := vm.NewEnv()
 
-	// add flags
-	err = a.Define("flags", flags)
-
 	// define vals
 	for _, z := range []struct {
 		n string
@@ -88,9 +86,9 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"build", flags.Build},
 		{"cache", flags.Cache},
 		{"node", flags.Node},
+		{"js", s.js},
 	} {
-		err = a.Define(z.n, z.v)
-		if err != nil {
+		if err = a.Define(z.n, z.v); err != nil {
 			return nil, fmt.Errorf("unable to define %s: %v", z.n, err)
 		}
 	}
@@ -163,9 +161,62 @@ func (s *Script) concat(params ...interface{}) {
 
 // js is the script handler to generate a minified javascript file from one or
 // more files.
-func (s *Script) js(params ...interface{}) {
+func (s *Script) js(fn string, params ...string) {
+	for _, n := range []string{
+		"uglify-js",
+	} {
+		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
+	}
+
 	s.exec = append(s.exec, func() error {
-		return nil
+		if len(params) < 1 {
+			return errors.New("must pass at least one script")
+		}
+
+		var err error
+
+		// ensure directory exists
+		dir := filepath.Join(s.flags.Build, "js")
+		if err = os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("could not create js dir: %v", err)
+		}
+
+		// open out file
+		outfile := filepath.Join(dir, fn)
+		f, err := os.Create(outfile)
+		if err != nil {
+			return fmt.Errorf("could not open %q: %v", outfile, err)
+		}
+
+		// add all files
+		for _, v := range params {
+			buf, err := ioutil.ReadFile(filepath.Join(s.flags.Assets, "js", v))
+			if err != nil {
+				return fmt.Errorf("could open js %q: %v", v, err)
+			}
+			if _, err = f.WriteString(strings.TrimSuffix(string(buf), "\n") + "\n"); err != nil {
+				return fmt.Errorf("could not write %q to %q: %v", v, outfile, err)
+			}
+		}
+
+		if err = f.Close(); err != nil {
+			return fmt.Errorf("could not close %q: %v", outfile, err)
+		}
+
+		ext := filepath.Ext(outfile)
+		un := strings.TrimSuffix(outfile, ext) + ".uglify" + ext
+		err = run(s.flags,
+			"uglifyjs",
+			"--source-map",
+			"--compress",
+			"--output="+un,
+			outfile,
+		)
+		if err != nil {
+			return fmt.Errorf("could not uglify %q: %v", outfile, err)
+		}
+
+		return s.dist.AddFile("/js/"+fn, un)
 	})
 }
 
