@@ -272,29 +272,30 @@ func (s *Script) addImages(_, dir string) {
 	}
 
 	s.exec = append(s.exec, func() error {
-		cacheDir := s.flags.Cache + "/images/"
-
-		// ensure image caching dir exists
-		err := os.MkdirAll(cacheDir, 0755)
-		if err != nil {
-			return err
-		}
-
 		// accumulate images
 		var all, changed []string
-		err = filepath.Walk(dir, func(n string, f os.FileInfo, err error) error {
-			// skip non images
-			if !imageExtRE.MatchString(f.Name()) {
+		err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case fi.IsDir() || !imageExtRE.MatchString(fi.Name()) || strings.HasPrefix(filepath.Base(n), "."):
 				return nil
 			}
 
-			// hash
+			// ensure directory exists
 			fn := strings.TrimPrefix(n, dir+"/")
+			cacheDir := filepath.Join(s.flags.Cache, "images", filepath.Dir(fn))
+			if err := os.MkdirAll(cacheDir, 0755); err != nil {
+				return err
+			}
+			outfile := filepath.Join(cacheDir, filepath.Base(fn))
+
+			// hash
 			hash, err := md5hash(n)
 			if err != nil {
 				return err
 			}
-			hashPath := cacheDir + fn + ".md5"
+			hashPath := outfile + ".md5"
 
 			var cached string
 
@@ -313,7 +314,7 @@ func (s *Script) addImages(_, dir string) {
 			}
 
 			all = append(all, fn)
-			if cached == "" || cached != hash {
+			if cached == "" || cached != hash || !fileExists(outfile) {
 				changed = append(changed, fn)
 			}
 			return ioutil.WriteFile(hashPath, []byte(hash), 0644)
@@ -340,7 +341,10 @@ func (s *Script) addImages(_, dir string) {
 						if fn == "" {
 							return nil
 						}
-						if err := s.optimizeImage(cacheDir+fn, dir+"/"+fn); err != nil {
+
+						out := filepath.Join(s.flags.Cache, "images", fn)
+						in := filepath.Join(s.flags.Assets, "images", fn)
+						if err := s.optimizeImage(out, in); err != nil {
 							return err
 						}
 					}
@@ -353,7 +357,7 @@ func (s *Script) addImages(_, dir string) {
 
 		// pack the generated images
 		for _, fn := range all {
-			if err := s.dist.AddFile("images/"+fn, cacheDir+fn); err != nil {
+			if err := s.dist.AddFile("images/"+fn, filepath.Join(s.flags.Cache, "images", fn)); err != nil {
 				return err
 			}
 		}

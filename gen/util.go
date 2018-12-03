@@ -328,3 +328,12 @@ func tplf(name string, v ...interface{}) string {
 	}
 	return fmt.Sprintf(tpl, v...)
 }
+
+// fileExists returns true if name exists on disk.
+func fileExists(name string) bool {
+	_, err := os.Stat(name)
+	if err == nil {
+		return true
+	}
+	return !os.IsNotExist(err)
+}
