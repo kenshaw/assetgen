@@ -2,6 +2,7 @@ module github.com/brankas/assetgen
 
 require (
 	github.com/Masterminds/semver v1.4.2
+	github.com/gobwas/glob v0.2.3
 	github.com/klauspost/compress v1.4.1 // indirect
 	github.com/klauspost/cpuid v1.2.0 // indirect
 	github.com/mattn/anko v0.0.6

@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gobwas/glob"
 	"github.com/mattn/anko/vm"
-
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/tools/imports"
@@ -29,6 +29,13 @@ import (
 type dep struct {
 	name string
 	ver  string
+}
+
+// npmdep wraps js dependency information.
+type npmdep struct {
+	name string
+	ver  string
+	path string
 }
 
 // Script wraps an assetgen script.
@@ -86,6 +93,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"build", flags.Build},
 		{"cache", flags.Cache},
 		{"node", flags.Node},
+		{"npmjs", s.npmjs},
 		{"js", s.js},
 	} {
 		if err = a.Define(z.n, z.v); err != nil {
@@ -159,9 +167,25 @@ func (s *Script) concat(params ...interface{}) {
 	})
 }
 
+// npmjs is the script handler that wraps a npm js include.
+func (s *Script) npmjs(name string, v ...string) npmdep {
+	var ver, path string
+	if i := strings.Index(name, "@"); i != -1 {
+		ver, name = name[i+1:], name[:i]
+	}
+	if len(v) != 0 {
+		path = v[0]
+	}
+	return npmdep{
+		name: name,
+		ver:  ver,
+		path: path,
+	}
+}
+
 // js is the script handler to generate a minified javascript file from one or
 // more files.
-func (s *Script) js(fn string, params ...string) {
+func (s *Script) js(fn string, v ...interface{}) {
 	for _, n := range []string{
 		"uglify-js",
 		"source-map",
@@ -169,12 +193,48 @@ func (s *Script) js(fn string, params ...string) {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
 
+	// add npm deps
+	for _, x := range v {
+		switch d := x.(type) {
+		case npmdep:
+			s.nodeDeps = append(s.nodeDeps, dep{d.name, d.ver})
+		}
+	}
+
 	s.exec = append(s.exec, func() error {
-		if len(params) < 1 {
-			return errors.New("must pass at least one script")
+		var err error
+
+		if len(v) < 1 {
+			return errors.New("js() must be passed at least one arg")
 		}
 
-		var err error
+		// process node deps
+		scripts := make([]npmdep, len(v))
+		for i := 0; i < len(v); i++ {
+			switch d := v[i].(type) {
+			case string:
+				n := filepath.Join(s.flags.Assets, "js", d)
+				_, err := os.Stat(n)
+				if err != nil {
+					return fmt.Errorf("could not find js %q", d)
+				}
+				scripts[i] = npmdep{path: n}
+
+			case npmdep:
+				p, err := s.findNpmFile(d)
+				if err != nil {
+					return err
+				}
+				scripts[i] = npmdep{name: d.name, path: p}
+			}
+		}
+
+		for i := 0; i < len(scripts); i++ {
+			scripts[i].path, err = filepath.Rel(s.flags.Wd, scripts[i].path)
+			if err != nil {
+				return fmt.Errorf("js cannot be outside of project")
+			}
+		}
 
 		// ensure directory exists
 		dir := filepath.Join(s.flags.Build, "js")
@@ -190,34 +250,36 @@ func (s *Script) js(fn string, params ...string) {
 		}
 
 		// add all files
-		for _, v := range params {
-			buf, err := ioutil.ReadFile(filepath.Join(s.flags.Assets, "js", v))
+		for _, d := range scripts {
+			buf, err := ioutil.ReadFile(filepath.Join(s.flags.Wd, d.path))
 			if err != nil {
-				return fmt.Errorf("could open js %q: %v", v, err)
+				return fmt.Errorf("could not read js %q: %v", fn, err)
 			}
 			if _, err = f.WriteString(strings.TrimSuffix(string(buf), "\n") + "\n"); err != nil {
-				return fmt.Errorf("could not write %q to %q: %v", v, outfile, err)
+				return fmt.Errorf("could not write %q to %q: %v", fn, outfile, err)
 			}
 		}
 
+		// close
 		if err = f.Close(); err != nil {
 			return fmt.Errorf("could not close %q: %v", outfile, err)
 		}
 
+		// uglify
 		ext := filepath.Ext(outfile)
-		un := strings.TrimSuffix(outfile, ext) + ".uglify" + ext
+		uglyfile := strings.TrimSuffix(outfile, ext) + ".uglify" + ext
 		err = run(s.flags,
 			"uglifyjs",
 			"--source-map",
 			"--compress",
-			"--output="+un,
+			"--output="+uglyfile,
 			outfile,
 		)
 		if err != nil {
 			return fmt.Errorf("could not uglify %q: %v", outfile, err)
 		}
 
-		return s.dist.AddFile("/js/"+fn, un)
+		return s.dist.AddFile("/js/"+fn, uglyfile)
 	})
 }
 
@@ -658,4 +720,40 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 		return "", err
 	}
 	return cbs.SocketPath(), nil
+}
+
+// findNpmFile finds the
+func (s *Script) findNpmFile(nd npmdep) (string, error) {
+	var found string
+	if nd.path == "" {
+		nd.path = nd.name + ".js"
+	}
+	dir := filepath.Join(s.flags.Node, nd.name)
+	err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case fi.IsDir() || found != "":
+			return nil
+		}
+		for _, d := range []string{"", "dist", "src"} {
+			pat, err := glob.Compile(filepath.Join(dir, d, nd.path))
+			if err != nil {
+				return fmt.Errorf("invalid path %q: %v", nd.path, err)
+			}
+			if pat.Match(n) {
+				found = n
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if found == "" {
+		return "", fmt.Errorf("could not find %q in npm package %s", nd.path, nd.name)
+	}
+
+	log.Printf(">>> found: %s", found)
+	return found, nil
 }
