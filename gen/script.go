@@ -283,6 +283,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 			}
 		}
 
+		// ensure scripts are contained within project
 		for i := 0; i < len(scripts); i++ {
 			scripts[i].path, err = filepath.Rel(s.flags.Wd, scripts[i].path)
 			if err != nil {
@@ -600,8 +601,28 @@ func (s *Script) addSass(_, dir string) {
 //
 // This looks at the locales directory, and if there is any locales adds them
 // to the packed data (but not to the manifest).
-func (s *Script) addLocales(n, dir string) {
+func (s *Script) addLocales(_, dir string) {
+	s.exec = append(s.exec, func() error {
+		p := pack.New("locales")
+		err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case fi.IsDir() || !strings.HasSuffix(n, ".po") || strings.HasPrefix(filepath.Base(n), "."):
+				return nil
+			}
 
+			z, err := filepath.Rel(dir, n)
+			if err != nil {
+				return err
+			}
+			return p.AddFile(z, n)
+		})
+		if err != nil {
+			return err
+		}
+		return p.WriteTo(filepath.Join(dir, "locales.go"), "Locales")
+	})
 }
 
 // addTemplates configures a script step for generating optimized template
