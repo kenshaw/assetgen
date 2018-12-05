@@ -30,12 +30,15 @@ const (
 	developmentEnv = "development"
 
 	scriptName   = "assets.anko"
+	assetsFile   = "assets.go"
 	fontsDir     = "fonts"
 	geoipDir     = "geoip"
 	localesDir   = "locales"
 	imagesDir    = "images"
 	jsDir        = "js"
 	sassDir      = "sass"
+	cssDir       = "css"
+	sassJs       = "sass.js"
 	templatesDir = "templates"
 
 	geoipURL = "https://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"

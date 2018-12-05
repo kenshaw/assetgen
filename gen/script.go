@@ -228,7 +228,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 		for i := 0; i < len(v); i++ {
 			switch d := v[i].(type) {
 			case string:
-				n := filepath.Join(s.flags.Assets, "js", d)
+				n := filepath.Join(s.flags.Assets, jsDir, d)
 				_, err := os.Stat(n)
 				if err != nil {
 					return fmt.Errorf("could not find js %q", d)
@@ -252,7 +252,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 		}
 
 		// ensure directory exists
-		dir := filepath.Join(s.flags.Build, "js")
+		dir := filepath.Join(s.flags.Build, jsDir)
 		if err = os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("could not create js dir: %v", err)
 		}
@@ -294,7 +294,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 			return fmt.Errorf("could not uglify %q: %v", outfile, err)
 		}
 
-		return s.dist.AddFile("/js/"+fn, uglyfile)
+		return s.dist.AddFile(jsDir+"/"+fn, uglyfile)
 	})
 }
 
@@ -434,7 +434,7 @@ func (s *Script) addImages(_, dir string) {
 
 		// pack the generated images
 		for _, fn := range all {
-			if err := s.dist.AddFile("images/"+fn, filepath.Join(s.flags.Cache, "images", fn)); err != nil {
+			if err := s.dist.AddFile(imagesDir+"/"+fn, filepath.Join(s.flags.Cache, imagesDir, fn)); err != nil {
 				return err
 			}
 		}
@@ -479,14 +479,14 @@ func (s *Script) addSass(_, dir string) {
 		if err != nil {
 			return fmt.Errorf("could not generate manifest: %v", err)
 		}
-		if err = ioutil.WriteFile(s.flags.Build+"/manifest.json", manifest, 0644); err != nil {
+		if err = ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
 			return fmt.Errorf("could not write manifest.json: %v", err)
 		}
 
 		// write sass.js to build dir
-		err = ioutil.WriteFile(s.flags.Build+"/sass.js", []byte(tplf("sass.js")), 0644)
+		err = ioutil.WriteFile(filepath.Join(s.flags.Build, sassJs), []byte(tplf(sassJs)), 0644)
 		if err != nil {
-			return fmt.Errorf("could not write sass.js: %v", err)
+			return fmt.Errorf("could not write %s: %v", sassJs, err)
 		}
 
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -509,10 +509,10 @@ func (s *Script) addSass(_, dir string) {
 				"--source-comments",
 				"--source-map-embed",
 				//"--source-map-contents",
-				//"--source-map=" + s.flags.Build + "/css/" + fn + ".css.map",
+				//"--source-map=" + filepath.Join(s.flags.Build, cssDir,  fn + ".css.map"),
 				//"--source-map-root=" + s.flags.Wd,
-				"--functions=" + s.flags.Build + "/sass.js",
-				"--output=" + s.flags.Build + "/css",
+				"--functions=" + filepath.Join(s.flags.Build, sassJs),
+				"--output=" + filepath.Join(s.flags.Build, cssDir),
 			}
 			for _, z := range s.sassIncludes {
 				params = append(params, "--include-path="+z)
@@ -530,8 +530,8 @@ func (s *Script) addSass(_, dir string) {
 				"postcss",
 				"--use=autoprefixer",
 				"--map",
-				"--output="+s.flags.Build+"/css/"+fn+".postcss.css",
-				s.flags.Build+"/css/"+fn+".css",
+				"--output="+filepath.Join(s.flags.Build, cssDir, fn+".postcss.css"),
+				filepath.Join(s.flags.Build, cssDir, fn+".css"),
 			)
 			if err != nil {
 				return fmt.Errorf("could not run postcss: %v", err)
@@ -545,14 +545,14 @@ func (s *Script) addSass(_, dir string) {
 				"--format='specialComments:0;processImport:0'",
 				"--source-map",
 				"--skip-rebase",
-				"--output="+s.flags.Build+"/css/"+fn+".cleancss.css",
-				s.flags.Build+"/css/"+fn+".postcss.css",
+				"--output="+filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css"),
+				filepath.Join(s.flags.Build, cssDir, fn+".postcss.css"),
 			)
 			if err != nil {
 				return fmt.Errorf("could not run cleancss: %v", err)
 			}
 
-			return s.dist.AddFile("css/"+fn+".css", s.flags.Build+"/css/"+fn+".cleancss.css")
+			return s.dist.AddFile(cssDir+"/"+fn+".css", filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css"))
 		})
 	})
 }
@@ -680,7 +680,7 @@ func (s *Script) Execute() error {
 	}
 
 	// write generated assets
-	if err = s.dist.WriteTo(s.flags.Assets+"/assets.go", "Assets"); err != nil {
+	if err = s.dist.WriteTo(filepath.Join(s.flags.Assets, assetsFile), "Assets"); err != nil {
 		return err
 	}
 
