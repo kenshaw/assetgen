@@ -201,21 +201,39 @@ func checkSetup(flags *Flags) error {
 		return fmt.Errorf("%s version must be %s, currently: %s", flags.Yarn, yarnConstraint, yarnVer)
 	}
 
+	var npmModulesPresent bool
+	_, err = os.Stat(filepath.Join(flags.Node))
+	switch {
+	case err == nil:
+		npmModulesPresent = true
+	}
+
+	var yarnLockPresent bool
+	_, err = os.Stat(filepath.Join(flags.Wd, "yarn.lock"))
+	switch {
+	case err == nil:
+		yarnLockPresent = true
+	}
+
 	// ensure primary directories exist
-	err = checkDirs(flags)
-	if err != nil {
+	if err = checkDirs(flags); err != nil {
 		return fmt.Errorf("could not create directories: %v", err)
 	}
 
 	// setup files
-	err = setupFiles(flags)
-	if err != nil {
+	if err = setupFiles(flags); err != nil {
 		return fmt.Errorf("unable to setup files: %v", err)
 	}
 
+	// do pure lockfile install
+	if !npmModulesPresent && yarnLockPresent {
+		if err = run(flags, flags.Yarn, "install", "--pure-lockfile"); err != nil {
+			return errors.New("unable to install locked deps: please run yarn manually")
+		}
+	}
+
 	// run yarn check
-	err = runSilent(flags, flags.Yarn, "check")
-	if err != nil {
+	if err = runSilent(flags, flags.Yarn, "check"); err != nil {
 		return errors.New("yarn is out of sync: please run yarn manually")
 	}
 
@@ -364,8 +382,7 @@ func fixNodeBinLinks(flags *Flags) error {
 		}
 
 		// symlink
-		err = os.Symlink(oldname, newname)
-		if err != nil {
+		if err = os.Symlink(oldname, newname); err != nil {
 			return fmt.Errorf("unable to symlink %s to %s: %v", newname, oldname, err)
 		}
 
