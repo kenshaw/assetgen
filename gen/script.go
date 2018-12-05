@@ -92,6 +92,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"build", flags.Build},
 		{"cache", flags.Cache},
 		{"node", flags.Node},
+		{"staticDir", s.staticDir},
 		{"sassInclude", s.sassInclude},
 		{"npmjs", s.npmjs},
 		{"js", s.js},
@@ -181,6 +182,41 @@ func (s *Script) npmjs(name string, v ...string) npmdep {
 		ver:  ver,
 		path: path,
 	}
+}
+
+var staticDirNameRE = regexp.MustCompile("^[A-Za-z0-9]+$")
+
+// staticDir adds a static directory to the assets.
+func (s *Script) staticDir(name string) {
+	s.exec = append(s.exec, func() error {
+		if !staticDirNameRE.MatchString(name) {
+			return fmt.Errorf("invalid static dir name %q", name)
+		}
+
+		dir := filepath.Join(s.flags.Assets, name)
+		fi, err := os.Stat(dir)
+		switch {
+		case err != nil:
+			return fmt.Errorf("could not open static dir %q", dir)
+		case !fi.IsDir():
+			return fmt.Errorf("%q is not a directory", dir)
+		}
+
+		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
+			switch {
+			case err != nil:
+				return err
+			case fi.IsDir():
+				return nil
+			}
+
+			p, err := filepath.Rel(s.flags.Assets, n)
+			if err != nil {
+				return fmt.Errorf("%q not located within the project: %v", fi.Name(), err)
+			}
+			return s.dist.AddFile(p, n)
+		})
+	})
 }
 
 // sassInclude adds a include path.
