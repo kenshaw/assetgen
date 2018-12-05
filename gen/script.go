@@ -277,6 +277,9 @@ func (s *Script) js(fn string, v ...interface{}) {
 					return err
 				}
 				scripts[i] = npmdep{name: d.name, path: p}
+
+			default:
+				return fmt.Errorf("unknown type passed to js(): %T", v[i])
 			}
 		}
 
