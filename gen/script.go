@@ -19,7 +19,6 @@ import (
 	"github.com/mattn/anko/vm"
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/tools/imports"
 
 	"github.com/brankas/assetgen/gen/ipc"
 	"github.com/brankas/assetgen/pack"
@@ -93,6 +92,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"build", flags.Build},
 		{"cache", flags.Cache},
 		{"node", flags.Node},
+		{"sassInclude", s.sassInclude},
 		{"npmjs", s.npmjs},
 		{"js", s.js},
 	} {
@@ -180,6 +180,21 @@ func (s *Script) npmjs(name string, v ...string) npmdep {
 		name: name,
 		ver:  ver,
 		path: path,
+	}
+}
+
+// sassInclude adds a include path.
+func (s *Script) sassInclude(name string, paths ...string) {
+	var ver string
+	if i := strings.Index(name, "@"); i != -1 {
+		ver, name = name[i+1:], name[:i]
+	}
+	s.nodeDeps = append(s.nodeDeps, dep{name, ver})
+	if len(paths) == 0 {
+		paths = append(paths, "")
+	}
+	for _, p := range paths {
+		s.sassIncludes = append(s.sassIncludes, filepath.Join(s.flags.Node, name, p))
 	}
 }
 
@@ -478,12 +493,17 @@ func (s *Script) addSass(_, dir string) {
 			switch {
 			case err != nil:
 				return err
-			case fi.IsDir() || filepath.Dir(n) != dir || strings.HasPrefix(n, "_") || !strings.HasSuffix(n, "scss"):
+			case fi.IsDir() || filepath.Dir(n) != dir || !strings.HasSuffix(n, "scss"):
+				return nil
+			}
+
+			base := filepath.Base(n)
+			if strings.HasPrefix(base, "_") || strings.HasPrefix(base, ".") {
 				return nil
 			}
 
 			// build node-sass params
-			fn := strings.TrimSuffix(filepath.Base(n), ".scss")
+			fn := strings.TrimSuffix(base, ".scss")
 			params := []string{
 				"--quiet",
 				"--source-comments",
@@ -676,12 +696,8 @@ func (s *Script) Execute() error {
 
 	// build and write manifest.go
 	src := tplf("manifest.go") + tplf("manifest.go.extra", manifest, rev)
-	fn := s.flags.Assets + "/manifest.go"
-	buf, err := imports.Process(fn, []byte(src), nil)
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(fn, buf, 0644)
+	// TODO: do go imports here -- currently imports.Process isn't working properly with large set of assets.
+	return ioutil.WriteFile(filepath.Join(s.flags.Assets, "manifest.go"), []byte(src), 0644)
 }
 
 // startCallbackServer creates and starts the IPC callback server.
@@ -753,7 +769,5 @@ func (s *Script) findNpmFile(nd npmdep) (string, error) {
 	if found == "" {
 		return "", fmt.Errorf("could not find %q in npm package %s", nd.path, nd.name)
 	}
-
-	log.Printf(">>> found: %s", found)
 	return found, nil
 }
