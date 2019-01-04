@@ -64,10 +64,13 @@ func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 
 		contentType := http.DetectContentType(data)
 		switch {
-		case strings.HasPrefix(contentType, "text/"):
+		case strings.HasPrefix(contentType, "text/") || contentType == "":
 			if i := strings.LastIndex(fn, "."); i != -1 {
 				contentType = mime.TypeByExtension(fn[i:])
 			}
+		}
+		if contentType == "" {
+			contentType = "application/octet-stream"
 		}
 
 		assets[fn] = vfsgen۰Asset{
