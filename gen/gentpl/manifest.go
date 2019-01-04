@@ -7,8 +7,10 @@ import (
 	"crypto/sha1"
 	"fmt"
 	"io/ioutil"
+	"mime"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/shurcooL/httpfs/vfsutil"
@@ -60,9 +62,17 @@ func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 			data = x.content
 		}
 
+		contentType := http.DetectContentType(data)
+		switch {
+		case strings.HasPrefix(contentType, "text/"):
+			if i := strings.LastIndex(fn, "."); i != -1 {
+				contentType = mime.TypeByExtension(fn[i:])
+			}
+		}
+
 		assets[fn] = vfsgen۰Asset{
 			Data:        data,
-			ContentType: http.DetectContentType(data),
+			ContentType: contentType,
 			ModTime:     fi.ModTime(),
 			SHA1:        fmt.Sprintf("%%x", sha1.Sum(data)),
 		}
