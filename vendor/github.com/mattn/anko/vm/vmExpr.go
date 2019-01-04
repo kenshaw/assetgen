@@ -304,6 +304,10 @@ func invokeExpr(expr ast.Expr, env *Env) (reflect.Value, error) {
 			return v.Index(ii).Convert(stringType), nil
 		case reflect.Map:
 			v = getMapIndex(i, v)
+			// Note if the map is of reflect.Value, it will incorrectly return nil when zero value
+			if v == zeroValue {
+				return nilValue, nil
+			}
 			return v, nil
 		default:
 			return nilValue, newStringError(e, "type "+v.Kind().String()+" does not support index operation")
@@ -459,6 +463,16 @@ func invokeExpr(expr ast.Expr, env *Env) (reflect.Value, error) {
 		if lhsV.Kind() == reflect.Interface && !lhsV.IsNil() {
 			lhsV = lhsV.Elem()
 		}
+		switch e.Operator {
+		case "&&":
+			if !toBool(lhsV) {
+				return lhsV, nil
+			}
+		case "||":
+			if toBool(lhsV) {
+				return lhsV, nil
+			}
+		}
 		if e.Rhs != nil {
 			rhsV, err = invokeExpr(e.Rhs, env)
 			if err != nil {
@@ -523,17 +537,11 @@ func invokeExpr(expr ast.Expr, env *Env) (reflect.Value, error) {
 		case "|":
 			return reflect.ValueOf(toInt64(lhsV) | toInt64(rhsV)), nil
 		case "||":
-			if toBool(lhsV) {
-				return lhsV, nil
-			}
 			return rhsV, nil
 		case "&":
 			return reflect.ValueOf(toInt64(lhsV) & toInt64(rhsV)), nil
 		case "&&":
-			if toBool(lhsV) {
-				return rhsV, nil
-			}
-			return lhsV, nil
+			return rhsV, nil
 		case "**":
 			if lhsV.Kind() == reflect.Float64 {
 				return reflect.ValueOf(math.Pow(lhsV.Float(), toFloat64(rhsV))), nil
@@ -575,15 +583,16 @@ func invokeExpr(expr ast.Expr, env *Env) (reflect.Value, error) {
 		return rhsV, nil
 
 	case *ast.NilCoalescingOpExpr:
-		lhsV, err := invokeExpr(e.Lhs, env)
-		if toBool(lhsV) {
-			return lhsV, nil
+		var err error
+		rv, _ := invokeExpr(e.Lhs, env)
+		if toBool(rv) {
+			return rv, nil
 		}
-		rhsV, err := invokeExpr(e.Rhs, env)
+		rv, err = invokeExpr(e.Rhs, env)
 		if err != nil {
 			return nilValue, newError(e.Rhs, err)
 		}
-		return rhsV, nil
+		return rv, nil
 
 	case *ast.LenExpr:
 		rv, err := invokeExpr(e.Expr, env)

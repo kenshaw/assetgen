@@ -1,9 +1,6 @@
 /assetgen
 /assetgen.exe
 
-# ignore vendored deps
-/vendor
-
 # generated assets
 /.cache
 /yarn*

@@ -49,7 +49,7 @@ type ForStmt struct {
 // CForStmt provide C-style "for (;;)" expression statement.
 type CForStmt struct {
 	StmtImpl
-	Expr1 Expr
+	Stmt1 Stmt
 	Expr2 Expr
 	Expr3 Expr
 	Stmts []Stmt
@@ -91,31 +91,32 @@ type ModuleStmt struct {
 	Stmts []Stmt
 }
 
+// SwitchStmt provide switch statement.
+type SwitchStmt struct {
+	StmtImpl
+	Expr Expr
+	Body Stmt
+}
+
+// SwitchBodyStmt provide switch case statements and default statement.
+type SwitchBodyStmt struct {
+	StmtImpl
+	Cases   []Stmt
+	Default []Stmt
+}
+
+// SwitchCaseStmt provide switch case statement.
+type SwitchCaseStmt struct {
+	StmtImpl
+	Exprs []Expr
+	Stmts []Stmt
+}
+
 // VarStmt provide statement to let variables in current scope.
 type VarStmt struct {
 	StmtImpl
 	Names []string
 	Exprs []Expr
-}
-
-// SwitchStmt provide switch statement.
-type SwitchStmt struct {
-	StmtImpl
-	Expr  Expr
-	Cases []Stmt
-}
-
-// CaseStmt provide switch/case statement.
-type CaseStmt struct {
-	StmtImpl
-	Expr  Expr
-	Stmts []Stmt
-}
-
-// DefaultStmt provide switch/default statement.
-type DefaultStmt struct {
-	StmtImpl
-	Stmts []Stmt
 }
 
 // LetsStmt provide multiple statement of let.
