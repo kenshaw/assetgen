@@ -1,26 +1,31 @@
 package assets
 
 import (
+	"bytes"
+	"compress/gzip"
+	"context"
+	"crypto/sha1"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/shurcooL/httpfs/vfsutil"
-	"github.com/shurcooL/httpgzip"
 )
 
-// ManifestAssets returns the the manifest assets as http.FileSystem.
-var ManifestAssets = func() http.FileSystem {
-	fs := vfsgen۰FS{
-		"/": &vfsgen۰DirInfo{
-			name:    "/",
-			modTime: time.Time{},
-		},
-	}
+// vfsgen۰Asset is a static asset.
+type vfsgen۰Asset struct {
+	Data        []byte
+	ContentType string
+	ModTime     time.Time
+	SHA1        string
+}
 
+// vfsgen۰buildManifestAssets builds manifest assets.
+func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 	manifest := Manifest()
+	assets := make(map[string]vfsgen۰Asset, len(manifest))
 	err := vfsutil.Walk(Assets, "/", func(n string, fi os.FileInfo, err error) error {
 		switch {
 		case err != nil:
@@ -40,52 +45,81 @@ var ManifestAssets = func() http.FileSystem {
 		}
 		fn = "/" + fn
 
-		var z interface{}
+		var data []byte
 		switch x := f.(type) {
 		case *vfsgen۰CompressedFileInfo:
-			z = &vfsgen۰CompressedFileInfo{
-				name:              fn,
-				modTime:           x.modTime,
-				compressedContent: x.compressedContent,
-				uncompressedSize:  x.uncompressedSize,
+			r, err := gzip.NewReader(bytes.NewReader(x.compressedContent))
+			if err != nil {
+				return err
+			}
+			data, err = ioutil.ReadAll(r)
+			if err != nil {
+				return err
 			}
 		case *vfsgen۰FileInfo:
-			z = &vfsgen۰FileInfo{
-				name:    x.name,
-				modTime: x.modTime,
-				content: x.content,
-			}
+			data = x.content
 		}
-		fs[fn] = z
-		fs["/"].(*vfsgen۰DirInfo).entries = append(fs["/"].(*vfsgen۰DirInfo).entries, z.(os.FileInfo))
+
+		assets[fn] = vfsgen۰Asset{
+			Data:        data,
+			ContentType: http.DetectContentType(data),
+			ModTime:     fi.ModTime(),
+			SHA1:        fmt.Sprintf("%%x", sha1.Sum(data)),
+		}
+
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return assets, nil
+}
+
+// StaticHandler returns the manifest path static asset handler.
+func StaticHandler(urlpath func(context.Context) string) http.Handler {
+	if urlpath == nil {
+		panic("urlpath func cannot be nil")
+	}
+
+	assets, err := vfsgen۰buildManifestAssets()
 	if err != nil {
 		panic(err)
 	}
 
-	return fs
-}()
+	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
+		// grab info
+		asset, ok := assets[urlpath(req.Context())]
+		if !ok {
+			http.Error(res, http.StatusText(http.StatusNotFound), http.StatusNotFound)
+			return
+		}
 
-type vfsgen۰Handler struct {
-	h http.Handler
-}
+		// check if-modified-since header, bail if present
+		if t, err := time.Parse(http.TimeFormat, req.Header.Get("If-Modified-Since")); err == nil && asset.ModTime.Unix() <= t.Unix() {
+			res.WriteHeader(http.StatusNotModified) // 304
+			return
+		}
 
-func (h *vfsgen۰Handler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
-	z, u := *req, *req.URL
-	z.URL = &u
-	z.URL.Path = strings.TrimPrefix(z.URL.Path, "/_")
-	h.h.ServeHTTP(res, &z)
-}
+		// check If-None-Match header, bail if present and match sha1
+		if req.Header.Get("If-None-Match") == asset.SHA1 {
+			res.WriteHeader(http.StatusNotModified) // 304
+			return
+		}
 
-// StaticHandler returns a static asset handler, with f handling any errors
-// encountered.
-func StaticHandler(f func(http.ResponseWriter, *http.Request, error)) http.Handler {
-	return &vfsgen۰Handler{
-		h: httpgzip.FileServer(ManifestAssets, httpgzip.FileServerOptions{
-			ServeError: f,
-		}),
-	}
+		// set headers
+		res.Header().Set("Content-Type", asset.ContentType)
+		res.Header().Set("Date", time.Now().Format(http.TimeFormat))
+
+		// cache headers
+		res.Header().Set("Cache-Control", "public, no-transform, max-age=31536000")
+		res.Header().Set("Expires", time.Now().AddDate(1, 0, 0).Format(http.TimeFormat))
+		res.Header().Set("Last-Modified", asset.ModTime.Format(http.TimeFormat))
+		res.Header().Set("ETag", asset.SHA1)
+
+		// write data to response
+		res.Write(asset.Data)
+	})
 }
 
 // Manifest returns the asset manifest.
