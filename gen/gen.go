@@ -191,7 +191,7 @@ func checkSetup(flags *Flags) error {
 	var err error
 
 	// ensure primary directories exist
-	if err = checkDirs(flags); err != nil {
+	if err = checkDirs(flags, &flags.Cache, &flags.Build, &flags.Assets); err != nil {
 		return fmt.Errorf("could not create directories: %v", err)
 	}
 
@@ -204,6 +204,17 @@ func checkSetup(flags *Flags) error {
 	}
 	if err = checkYarn(flags); err != nil {
 		return err
+	}
+
+	// ensure node_modules and assets directories exist
+	for _, d := range []struct{ n, v string }{
+		{"node_modules", flags.NodeModules},
+		{"assets", flags.Assets},
+	} {
+		_, err := filepath.Rel(flags.Wd, d.v)
+		if err != nil || !isParentDir(flags.Wd, d.v) {
+			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
+		}
 	}
 
 	var nodeModulesPresent bool
@@ -242,9 +253,9 @@ func checkSetup(flags *Flags) error {
 
 // checkDirs creates required directories and ensures node and assets are
 // subdirectories of the working directory.
-func checkDirs(flags *Flags) error {
+func checkDirs(flags *Flags, dirs ...*string) error {
 	// make required directories
-	for _, d := range []*string{&flags.Cache, &flags.Build, &flags.NodeModules, &flags.NodeModulesBin, &flags.Assets} {
+	for _, d := range dirs {
 		v, err := filepath.Abs(*d)
 		if err != nil {
 			return fmt.Errorf("could not resolve path %q", *d)
@@ -258,17 +269,6 @@ func checkDirs(flags *Flags) error {
 			return fmt.Errorf("could not determine realpath for %q", *d)
 		}
 		*d = v
-	}
-
-	// ensure node_modules and assets directories exist
-	for _, d := range []struct{ n, v string }{
-		{"node_modules", flags.NodeModules},
-		{"assets", flags.Assets},
-	} {
-		_, err := filepath.Rel(flags.Wd, d.v)
-		if err != nil || !isParentDir(flags.Wd, d.v) {
-			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
-		}
 	}
 
 	return nil
@@ -613,9 +613,10 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 // fixNodeModulesBinLinks walks all packages in flags.NodeModules, reading their bin entries from
 // package.json, and creating the appropriate symlink in flags.NodeModulesBin.
 func fixNodeModulesBinLinks(flags *Flags) error {
-	// check dirs again
-	err := checkDirs(flags)
-	if err != nil {
+	var err error
+
+	// check dirs
+	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
 		return fmt.Errorf("unable to fix node bin directory: %v", err)
 	}
 

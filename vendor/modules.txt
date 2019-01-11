@@ -27,7 +27,15 @@ github.com/spf13/afero/mem
 github.com/valyala/quicktemplate/parser
 # github.com/yookoala/realpath v1.0.0
 github.com/yookoala/realpath
-# golang.org/x/net v0.0.0-20181220203305-927f97764cc3
+# golang.org/x/crypto v0.0.0-20190103213133-ff983b9c42bc
+golang.org/x/crypto/openpgp
+golang.org/x/crypto/openpgp/armor
+golang.org/x/crypto/openpgp/errors
+golang.org/x/crypto/openpgp/packet
+golang.org/x/crypto/openpgp/s2k
+golang.org/x/crypto/cast5
+golang.org/x/crypto/openpgp/elgamal
+# golang.org/x/net v0.0.0-20190110200230-915654e7eabc
 golang.org/x/net/http/httpguts
 golang.org/x/net/idna
 # golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
