@@ -131,7 +131,7 @@ func Assetgen(flags *Flags) error {
 
 	// set PATH
 	if err = os.Setenv("PATH", strings.Join([]string{
-		flags.Node,
+		filepath.Dir(flags.NodeBin),
 		flags.NodeModulesBin,
 		os.Getenv("PATH"),
 	}, ":")); err != nil {
@@ -206,29 +206,22 @@ func checkSetup(flags *Flags) error {
 		return err
 	}
 
-	// ensure node_modules and assets directories exist
-	for _, d := range []struct{ n, v string }{
-		{"node_modules", flags.NodeModules},
-		{"assets", flags.Assets},
-	} {
-		_, err := filepath.Rel(flags.Wd, d.v)
-		if err != nil || !isParentDir(flags.Wd, d.v) {
-			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
-		}
-	}
-
-	var nodeModulesPresent bool
+	// determine if node_modules and yarn.lock is present
+	var nodeModulesPresent, yarnLockPresent bool
 	_, err = os.Stat(flags.NodeModules)
 	switch {
 	case err == nil:
 		nodeModulesPresent = true
 	}
-
-	var yarnLockPresent bool
 	_, err = os.Stat(filepath.Join(flags.Wd, "yarn.lock"))
 	switch {
 	case err == nil:
 		yarnLockPresent = true
+	}
+
+	// check dirs node_modules + node_modules/.bin
+	if err = checkDirs(flags, &flags.NodeModules, &flags.NodeModulesBin); err != nil {
+		return fmt.Errorf("unable to fix node bin directory: %v", err)
 	}
 
 	// setup files
@@ -240,6 +233,17 @@ func checkSetup(flags *Flags) error {
 	if !nodeModulesPresent && yarnLockPresent {
 		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile"); err != nil {
 			return errors.New("unable to install locked deps: please run yarn manually")
+		}
+	}
+
+	// ensure node_modules and assets directories exist
+	for _, d := range []struct{ n, v string }{
+		{"node_modules", flags.NodeModules},
+		{"assets", flags.Assets},
+	} {
+		_, err := filepath.Rel(flags.Wd, d.v)
+		if err != nil || !isParentDir(flags.Wd, d.v) {
+			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
 		}
 	}
 
@@ -615,11 +619,6 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 func fixNodeModulesBinLinks(flags *Flags) error {
 	var err error
 
-	// check dirs
-	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
-		return fmt.Errorf("unable to fix node bin directory: %v", err)
-	}
-
 	// erase all links in bin dir
 	err = filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
 		switch {
@@ -630,8 +629,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		case fi.Mode()&os.ModeSymlink == 0:
 			return fmt.Errorf("%s is not a symlink", path)
 		}
-		err = os.Remove(path)
-		if err != nil {
+		if err = os.Remove(path); err != nil {
 			return fmt.Errorf("unable to remove %s: %v", path, err)
 		}
 		return nil
@@ -713,7 +711,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		// check symlink exists
 		_, err = os.Stat(newname)
 		switch {
-		case err != nil && os.IsNotExist(err):
+		case os.IsNotExist(err):
 		case err != nil:
 			return err
 		}
@@ -725,8 +723,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 
 		// fix permissions
 		if runtime.GOOS != "windows" {
-			err = os.Chmod(linkpath, 0755)
-			if err != nil {
+			if err = os.Chmod(linkpath, 0755); err != nil {
 				return err
 			}
 		}
