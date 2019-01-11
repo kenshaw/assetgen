@@ -1,19 +1,25 @@
 package gen
 
 import (
+	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
 	"crypto/md5"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/Masterminds/semver"
@@ -21,7 +27,14 @@ import (
 	"github.com/shurcooL/httpgzip"
 )
 
-// warnf handles issuing warnings.
+// infof handles logging information.
+func infof(flags *Flags, s string, v ...interface{}) {
+	if flags.Verbose {
+		log.Printf(s, v...)
+	}
+}
+
+// warnf handles logging warnings.
 func warnf(flags *Flags, s string, v ...interface{}) {
 	if flags.Verbose {
 		log.Printf("WARNING: "+s, v...)
@@ -336,4 +349,201 @@ func fileExists(name string) bool {
 		return true
 	}
 	return !os.IsNotExist(err)
+}
+
+// getAndCache retrieves the specified file, caching it to the specified path.
+func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool, names ...string) ([]byte, error) {
+	n := pathJoin(flags.Cache, names...)
+	cd := filepath.Dir(n)
+	err := os.MkdirAll(cd, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	// check if file exists on disk
+	fi, err := os.Stat(n)
+	switch {
+	case os.IsNotExist(err):
+	case err != nil:
+		return nil, err
+	case ttl == 0 || !time.Now().After(fi.ModTime().Add(ttl)):
+		return ioutil.ReadFile(n)
+	}
+
+	infof(flags, "RETRIEVING: %s", urlstr)
+
+	// retrieve
+	cl := &http.Client{}
+	req, err := http.NewRequest("GET", urlstr, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		return nil, fmt.Errorf("could not retrieve %q (%d)", urlstr, res.StatusCode)
+	}
+
+	buf, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// decode
+	if b64decode {
+		buf, err = base64.StdEncoding.DecodeString(string(buf))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// write
+	if err = ioutil.WriteFile(n, buf, 0644); err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+// pathJoin is a simple wrapper around filepath.Join to simplify inline syntax.
+func pathJoin(n string, m ...string) string {
+	return filepath.Join(append([]string{n}, m...)...)
+}
+
+// extractArchive extracts buf to dir.
+func extractArchive(dir string, buf []byte, ext string, chop string) error {
+	switch ext {
+	case ".zip":
+		return extractZip(dir, buf, chop)
+	case ".tar.gz":
+		return extractTarGz(dir, buf, chop)
+	}
+	return fmt.Errorf("invalid archive type %q", ext)
+}
+
+// extractZip extracts buf to dir.
+func extractZip(dir string, buf []byte, chop string) error {
+	r, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
+	if err != nil {
+		return err
+	}
+
+	for _, z := range r.File {
+		n := filepath.Join(dir, strings.TrimPrefix(z.Name, chop))
+		fi := z.FileInfo()
+		switch {
+		case fi.IsDir():
+			if err = os.MkdirAll(n, fi.Mode()); err != nil {
+				return err
+			}
+
+		default:
+			fr, err := z.Open()
+			if err != nil {
+				return err
+			}
+			f, err := os.OpenFile(n, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, fi.Mode())
+			if err != nil {
+				return err
+			}
+			if _, err = io.Copy(f, fr); err != nil {
+				return err
+			}
+			if err = f.Close(); err != nil {
+				return err
+			}
+			if err = fr.Close(); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// extractTarGz extracts buf to dir.
+func extractTarGz(dir string, buf []byte, chop string) error {
+	gz, err := gzip.NewReader(bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+
+	r := tar.NewReader(gz)
+
+loop:
+	for {
+		// next file
+		h, err := r.Next()
+		switch {
+		case err == io.EOF:
+			break loop
+		case err != nil:
+			return err
+		}
+
+		n := filepath.Join(dir, strings.TrimPrefix(h.Name, chop))
+		switch h.Typeflag {
+		case tar.TypeDir:
+			// create dir
+			if err = os.MkdirAll(n, h.FileInfo().Mode()); err != nil {
+				return err
+			}
+
+		case tar.TypeReg:
+			// write file
+			f, err := os.OpenFile(n, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, h.FileInfo().Mode())
+			if err != nil {
+				return err
+			}
+			if _, err = io.Copy(f, r); err != nil {
+				return err
+			}
+			if err = f.Close(); err != nil {
+				return err
+			}
+
+		case tar.TypeSymlink:
+			// check that symlink is contained in dir and link
+			p := filepath.Clean(filepath.Join(filepath.Dir(n), h.Linkname))
+			if _, err = filepath.Rel(dir, p); err != nil {
+				return fmt.Errorf("could not make tar symlink %q relative to %s", h.Linkname, dir)
+			}
+			if err = os.Symlink(p, n); err != nil {
+				return fmt.Errorf("could not create symlink for %q: %v", n, err)
+			}
+
+		default:
+			return fmt.Errorf("unsupported file type in tar: %v", h.Typeflag)
+		}
+	}
+	return nil
+}
+
+type githubAsset struct {
+	BrowserDownloadURL string `json:"browser_download_url"`
+	Name               string `json:"name"`
+	ContentType        string `json:"content_type"`
+}
+
+// githubLatestAssets retrieves the latest release assets from the named repo.
+func githubLatestAssets(flags *Flags, repo, dir string) (string, []githubAsset, error) {
+	urlstr := "https://api.github.com/repos/" + repo + "/releases/latest"
+	buf, err := getAndCache(flags, urlstr, flags.Ttl, false, dir, "latest.json")
+	if err != nil {
+		return "", nil, err
+	}
+
+	var release struct {
+		Name   string        `json:"name"`
+		Assets []githubAsset `json:"assets"`
+	}
+	if err = json.Unmarshal(buf, &release); err != nil {
+		return "", nil, err
+	}
+
+	return release.Name, release.Assets, nil
 }

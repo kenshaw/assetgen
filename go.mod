@@ -10,9 +10,10 @@ require (
 	github.com/spf13/afero v1.2.0
 	github.com/valyala/quicktemplate v1.0.0
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/net v0.0.0-20181220203305-927f97764cc3 // indirect
+	golang.org/x/crypto v0.0.0-20190103213133-ff983b9c42bc
+	golang.org/x/net v0.0.0-20190110200230-915654e7eabc // indirect
 	golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
-	golang.org/x/tools v0.0.0-20190103205943-8a6051197512 // indirect
+	golang.org/x/tools v0.0.0-20190110211028-68c5ac90f574 // indirect
 )
 
 replace github.com/valyala/quicktemplate => github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9

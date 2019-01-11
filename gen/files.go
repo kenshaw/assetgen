@@ -15,15 +15,15 @@ func setupFiles(flags *Flags) error {
 	var err error
 
 	// build relative node path
-	nodepath, err := filepath.Rel(flags.Wd, flags.Node)
-	if err != nil || !isParentDir(flags.Wd, flags.Node) {
+	nodepath, err := filepath.Rel(flags.Wd, flags.NodeModules)
+	if err != nil || !isParentDir(flags.Wd, flags.NodeModules) {
 		return errors.New("node path must be subdirectory of working directory")
 	}
 	app := filepath.Base(flags.Wd)
 
 	// build relative cache paths
 	var cacheList string
-	for i, d := range buildCacheDirs(flags.Wd, flags.Cache, flags.Node, flags.NodeBin) {
+	for i, d := range buildCacheDirs(flags.Wd, flags.Cache, flags.NodeModules, flags.NodeModulesBin) {
 		if i != 0 {
 			cacheList += ","
 		}

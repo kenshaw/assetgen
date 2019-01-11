@@ -30,8 +30,8 @@ type dep struct {
 	ver  string
 }
 
-// npmdep wraps js dependency information.
-type npmdep struct {
+// jsdep wraps js dependency information.
+type jsdep struct {
 	name string
 	ver  string
 	path string
@@ -88,10 +88,6 @@ func LoadScript(flags *Flags) (*Script, error) {
 		n string
 		v interface{}
 	}{
-		{"flags", flags},
-		{"build", flags.Build},
-		{"cache", flags.Cache},
-		{"node", flags.Node},
 		{"staticDir", s.staticDir},
 		{"sassInclude", s.sassInclude},
 		{"npmjs", s.npmjs},
@@ -169,7 +165,7 @@ func (s *Script) concat(params ...interface{}) {
 }
 
 // npmjs is the script handler that wraps a npm js include.
-func (s *Script) npmjs(name string, v ...string) npmdep {
+func (s *Script) npmjs(name string, v ...string) jsdep {
 	var ver, path string
 	if i := strings.Index(name, "@"); i != -1 {
 		ver, name = name[i+1:], name[:i]
@@ -177,7 +173,7 @@ func (s *Script) npmjs(name string, v ...string) npmdep {
 	if len(v) != 0 {
 		path = v[0]
 	}
-	return npmdep{
+	return jsdep{
 		name: name,
 		ver:  ver,
 		path: path,
@@ -230,7 +226,7 @@ func (s *Script) sassInclude(name string, paths ...string) {
 		paths = append(paths, "")
 	}
 	for _, p := range paths {
-		s.sassIncludes = append(s.sassIncludes, filepath.Join(s.flags.Node, name, p))
+		s.sassIncludes = append(s.sassIncludes, filepath.Join(s.flags.NodeModules, name, p))
 	}
 }
 
@@ -244,10 +240,10 @@ func (s *Script) js(fn string, v ...interface{}) {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
 
-	// add npm deps
+	// add node deps
 	for _, x := range v {
 		switch d := x.(type) {
-		case npmdep:
+		case jsdep:
 			s.nodeDeps = append(s.nodeDeps, dep{d.name, d.ver})
 		}
 	}
@@ -260,7 +256,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 		}
 
 		// process node deps
-		scripts := make([]npmdep, len(v))
+		scripts := make([]jsdep, len(v))
 		for i := 0; i < len(v); i++ {
 			switch d := v[i].(type) {
 			case string:
@@ -269,14 +265,14 @@ func (s *Script) js(fn string, v ...interface{}) {
 				if err != nil {
 					return fmt.Errorf("could not find js %q", d)
 				}
-				scripts[i] = npmdep{path: n}
+				scripts[i] = jsdep{path: n}
 
-			case npmdep:
-				p, err := s.findNpmFile(d)
+			case jsdep:
+				p, err := s.findNodeModulesFile(d)
 				if err != nil {
 					return err
 				}
-				scripts[i] = npmdep{name: d.name, path: p}
+				scripts[i] = jsdep{name: d.name, path: p}
 
 			default:
 				return fmt.Errorf("unknown type passed to js(): %T", v[i])
@@ -727,7 +723,7 @@ func (s *Script) ConfigDeps() error {
 		return nil
 	}
 
-	return run(s.flags, s.flags.Yarn, params...)
+	return run(s.flags, s.flags.YarnBin, params...)
 }
 
 // Execute executes the script.
@@ -798,13 +794,19 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 	return cbs.SocketPath(), nil
 }
 
-// findNpmFile finds the
-func (s *Script) findNpmFile(nd npmdep) (string, error) {
+// findNodeModulesFile searches node_modules package for a masked file path,
+// returning the path.
+//
+// If the passed dependency does not include a set file path, then it is
+// assumed to be "<package name>.js". Searches first in the package's root,
+// then the sub-directories dist and src. The first file matching the masked
+// path name will be returned.
+func (s *Script) findNodeModulesFile(jd jsdep) (string, error) {
 	var found string
-	if nd.path == "" {
-		nd.path = nd.name + ".js"
+	if jd.path == "" {
+		jd.path = jd.name + ".js"
 	}
-	dir := filepath.Join(s.flags.Node, nd.name)
+	dir := filepath.Join(s.flags.NodeModules, jd.name)
 	err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
 		switch {
 		case err != nil:
@@ -813,9 +815,9 @@ func (s *Script) findNpmFile(nd npmdep) (string, error) {
 			return nil
 		}
 		for _, d := range []string{"", "dist", "src"} {
-			pat, err := glob.Compile(filepath.Join(dir, d, nd.path))
+			pat, err := glob.Compile(filepath.Join(dir, d, jd.path))
 			if err != nil {
-				return fmt.Errorf("invalid path %q: %v", nd.path, err)
+				return fmt.Errorf("invalid path %q: %v", jd.path, err)
 			}
 			if pat.Match(n) {
 				found = n
@@ -827,7 +829,7 @@ func (s *Script) findNpmFile(nd npmdep) (string, error) {
 		return "", err
 	}
 	if found == "" {
-		return "", fmt.Errorf("could not find %q in npm package %s", nd.path, nd.name)
+		return "", fmt.Errorf("could not find %q in npm package %s", jd.path, jd.name)
 	}
 	return found, nil
 }

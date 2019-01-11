@@ -11,13 +11,18 @@ type Flags struct {
 	Wd string
 
 	Verbose bool
+
+	Node    string
+	NodeBin string
+
 	Yarn    string
+	YarnBin string
 
 	Cache string
 	Build string
 
-	Node    string
-	NodeBin string
+	NodeModules    string
+	NodeModulesBin string
 
 	Assets string
 	Script string
@@ -25,8 +30,6 @@ type Flags struct {
 	ManifestName string
 
 	Ttl time.Duration
-	//Env string
-	//NoUpdate bool
 
 	Workers int
 
@@ -45,22 +48,21 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 	fs := flag.NewFlagSet(name, errorHandling)
 
 	fs.BoolVar(&f.Verbose, "v", true, "toggle verbose")
-	fs.StringVar(&f.Yarn, "yarn", "", "path to yarn")
+	fs.StringVar(&f.Node, "node", "", "path to node executable")
+	fs.StringVar(&f.Yarn, "yarn", "", "path to yarn executable")
 
 	fs.StringVar(&f.Cache, "cache", "", "cache directory")
 	fs.StringVar(&f.Build, "build", "", "build directory")
 
-	fs.StringVar(&f.Node, "node", "", "node modules path")
-	fs.StringVar(&f.NodeBin, "node-bin", "", "node bin path")
+	fs.StringVar(&f.NodeModules, "node-modules", "", "node_modules path")
+	fs.StringVar(&f.NodeModulesBin, "node-modules-bin", "", "node_modules/.bin path")
 
-	fs.StringVar(&f.Assets, "assets", "", "assets directory")
+	fs.StringVar(&f.Assets, "assets", "", "assets path")
 	fs.StringVar(&f.Script, "script", "", "script file")
 
 	fs.StringVar(&f.ManifestName, "manifest-name", "%s[:4]%s[:4]%s", "manifest name")
 
-	fs.DurationVar(&f.Ttl, "ttl", 24*7*time.Hour, "ttl for long-lived assets (geoip)")
-	//fs.StringVar(&f.Env, "env", os.Getenv("ENV"), "environment")
-	//fs.BoolVar(&f.NoUpdate, "noupdate", false, "no update")
+	fs.DurationVar(&f.Ttl, "ttl", 24*7*time.Hour, "ttl for retrieved dependencies (node, yarn, geoip)")
 
 	fs.IntVar(&f.Workers, "workers", runtime.NumCPU()+1, "number of workers")
 

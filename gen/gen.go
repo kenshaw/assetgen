@@ -1,30 +1,38 @@
 package gen
 
 import (
+	"bufio"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 
+	"github.com/Masterminds/semver"
 	"github.com/yookoala/realpath"
+	"golang.org/x/crypto/openpgp"
 )
 
 const (
-	yarnConstraint = ">=1.12.x, <1.13"
-	yarnRcName     = ".yarnrc"
+	nodeConstraint = ">=10.15.x"
+	yarnConstraint = ">=1.12.x"
 
-	cacheDir   = ".cache"
-	buildDir   = "build"
-	nodeDir    = "node_modules"
-	nodeBinDir = ".bin"
-	assetsDir  = "assets"
+	yarnRcName = ".yarnrc"
+
+	cacheDir          = ".cache"
+	buildDir          = "build"
+	nodeModulesDir    = "node_modules"
+	nodeModulesBinDir = ".bin"
+	assetsDir         = "assets"
 
 	productionEnv  = "production"
 	developmentEnv = "development"
@@ -41,7 +49,8 @@ const (
 	sassJs       = "sass.js"
 	templatesDir = "templates"
 
-	geoipURL = "https://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"
+	nodeDistURL = "https://nodejs.org/dist"
+	geoipURL    = "https://geolite.maxmind.com/download/geoip/database/GeoLite2-Country.mmdb.gz"
 )
 
 // Run generates assets using the current working directory and default flags.
@@ -97,11 +106,11 @@ func Assetgen(flags *Flags) error {
 	if flags.Build == "" {
 		flags.Build = filepath.Join(flags.Wd, buildDir)
 	}
-	if flags.Node == "" {
-		flags.Node = filepath.Join(flags.Cache, nodeDir)
+	if flags.NodeModules == "" {
+		flags.NodeModules = filepath.Join(flags.Cache, nodeModulesDir)
 	}
-	if flags.NodeBin == "" {
-		flags.NodeBin = filepath.Join(flags.Node, nodeBinDir)
+	if flags.NodeModulesBin == "" {
+		flags.NodeModulesBin = filepath.Join(flags.NodeModules, nodeModulesBinDir)
 	}
 	if flags.Assets == "" {
 		flags.Assets = filepath.Join(flags.Wd, assetsDir)
@@ -110,31 +119,9 @@ func Assetgen(flags *Flags) error {
 		flags.Script = filepath.Join(flags.Assets, scriptName)
 	}
 
-	/*if flags.Env == "" {
-		flags.Env = developmentEnv
-	}
-	*/
-	// force noupdate when env == production
-	/*if flags.Env == productionEnv {
-		flags.NoUpdate = true
-	}*/
-
 	// set working directory
 	if err = os.Chdir(flags.Wd); err != nil {
 		return fmt.Errorf("could not change to dir: %v", err)
-	}
-
-	// set PATH
-	if err = os.Setenv("PATH", flags.NodeBin+":"+os.Getenv("PATH")); err != nil {
-		return fmt.Errorf("could not set PATH: %v", err)
-	}
-
-	// resolve yarn location
-	if flags.Yarn == "" {
-		flags.Yarn, err = exec.LookPath("yarn")
-		if err != nil {
-			return errors.New("yarn executable not in PATH")
-		}
 	}
 
 	// check setup
@@ -142,8 +129,17 @@ func Assetgen(flags *Flags) error {
 		return err
 	}
 
+	// set PATH
+	if err = os.Setenv("PATH", strings.Join([]string{
+		flags.Node,
+		flags.NodeModulesBin,
+		os.Getenv("PATH"),
+	}, ":")); err != nil {
+		return fmt.Errorf("could not set PATH: %v", err)
+	}
+
 	// set NODE_PATH
-	if err = os.Setenv("NODE_PATH", flags.Node); err != nil {
+	if err = os.Setenv("NODE_PATH", flags.NodeModules); err != nil {
 		return fmt.Errorf("could not set NODE_PATH: %v", err)
 	}
 	// load script
@@ -158,8 +154,8 @@ func Assetgen(flags *Flags) error {
 	}
 
 	// fix links in node/.bin directory
-	if err = fixNodeBinLinks(flags); err != nil {
-		return fmt.Errorf("unable to fix bin links in %s: %v", flags.NodeBin, err)
+	if err = fixNodeModulesBinLinks(flags); err != nil {
+		return fmt.Errorf("unable to fix bin links in %s: %v", flags.NodeModulesBin, err)
 	}
 
 	ctxt, cancel := context.WithCancel(context.Background())
@@ -192,20 +188,29 @@ func Assetgen(flags *Flags) error {
 // checkSetup checks that yarn is the correct version, and all necessary files
 // and directories exist as expected.
 func checkSetup(flags *Flags) error {
-	// check yarn version
-	yarnVer, err := runCombined(flags, flags.Yarn, "--version")
-	if err != nil {
-		return fmt.Errorf("unable to determine yarn version: %v", err)
-	}
-	if !compareSemver(strings.TrimPrefix(yarnVer, "v"), yarnConstraint) {
-		return fmt.Errorf("%s version must be %s, currently: %s", flags.Yarn, yarnConstraint, yarnVer)
+	var err error
+
+	// ensure primary directories exist
+	if err = checkDirs(flags); err != nil {
+		return fmt.Errorf("could not create directories: %v", err)
 	}
 
-	var npmModulesPresent bool
-	_, err = os.Stat(filepath.Join(flags.Node))
+	// check node + yarn
+	if err = checkNode(flags); err != nil {
+		return err
+	}
+	if err = os.Setenv("PATH", filepath.Dir(flags.NodeBin)+":"+os.Getenv("PATH")); err != nil {
+		return err
+	}
+	if err = checkYarn(flags); err != nil {
+		return err
+	}
+
+	var nodeModulesPresent bool
+	_, err = os.Stat(flags.NodeModules)
 	switch {
 	case err == nil:
-		npmModulesPresent = true
+		nodeModulesPresent = true
 	}
 
 	var yarnLockPresent bool
@@ -215,25 +220,20 @@ func checkSetup(flags *Flags) error {
 		yarnLockPresent = true
 	}
 
-	// ensure primary directories exist
-	if err = checkDirs(flags); err != nil {
-		return fmt.Errorf("could not create directories: %v", err)
-	}
-
 	// setup files
 	if err = setupFiles(flags); err != nil {
 		return fmt.Errorf("unable to setup files: %v", err)
 	}
 
 	// do pure lockfile install
-	if !npmModulesPresent && yarnLockPresent {
-		if err = run(flags, flags.Yarn, "install", "--pure-lockfile"); err != nil {
+	if !nodeModulesPresent && yarnLockPresent {
+		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile"); err != nil {
 			return errors.New("unable to install locked deps: please run yarn manually")
 		}
 	}
 
 	// run yarn check
-	if err = runSilent(flags, flags.Yarn, "check"); err != nil {
+	if err = runSilent(flags, flags.YarnBin, "check"); err != nil {
 		return errors.New("yarn is out of sync: please run yarn manually")
 	}
 
@@ -244,7 +244,7 @@ func checkSetup(flags *Flags) error {
 // subdirectories of the working directory.
 func checkDirs(flags *Flags) error {
 	// make required directories
-	for _, d := range []*string{&flags.Cache, &flags.Build, &flags.Node, &flags.NodeBin, &flags.Assets} {
+	for _, d := range []*string{&flags.Cache, &flags.Build, &flags.NodeModules, &flags.NodeModulesBin, &flags.Assets} {
 		v, err := filepath.Abs(*d)
 		if err != nil {
 			return fmt.Errorf("could not resolve path %q", *d)
@@ -260,9 +260,9 @@ func checkDirs(flags *Flags) error {
 		*d = v
 	}
 
-	// ensure node and assets directories exist
+	// ensure node_modules and assets directories exist
 	for _, d := range []struct{ n, v string }{
-		{"node", flags.Node},
+		{"node_modules", flags.NodeModules},
 		{"assets", flags.Assets},
 	} {
 		_, err := filepath.Rel(flags.Wd, d.v)
@@ -274,9 +274,345 @@ func checkDirs(flags *Flags) error {
 	return nil
 }
 
-// fixNodeBinLinks walks all packages in flags.Node, reading their bin entries from
-// package.json, and creating the appropriate symlink in flags.NodeBin.
-func fixNodeBinLinks(flags *Flags) error {
+// checkNode checks that node is available and the correct version.
+//
+// If node is not available, then the latest version is downloaded to the cache
+// dir and used instead.
+func checkNode(flags *Flags) error {
+	var err error
+
+	if flags.Node == "" {
+		if flags.Node, flags.NodeBin, err = installNode(flags); err != nil {
+			return err
+		}
+	}
+
+	node, err := realpath.Realpath(flags.Node)
+	if err != nil {
+		return err
+	}
+	flags.Node = node
+
+	if flags.NodeBin == "" {
+		if runtime.GOOS == "windows" {
+			flags.NodeBin = filepath.Join(flags.Node, "node.exe")
+		} else {
+			flags.NodeBin = filepath.Join(flags.Node, "bin", "node")
+		}
+	}
+
+	// check node version
+	nodeVer, err := runCombined(flags, flags.NodeBin, "--version")
+	if err != nil {
+		return fmt.Errorf("unable to determine node version: %v", err)
+	}
+	if !compareSemver(nodeVer, nodeConstraint) {
+		return fmt.Errorf("%s version must be %s, currently: %s", flags.NodeBin, nodeConstraint, nodeVer)
+	}
+
+	return nil
+}
+
+// installNode installs node to the cache directory.
+func installNode(flags *Flags) (string, string, error) {
+	// get version
+	v, err := getNodeLtsVersion(flags)
+	if err != nil {
+		return "", "", err
+	}
+
+	// env variables
+	platform, ext := runtime.GOOS, ".tar.gz"
+	switch runtime.GOOS {
+	case "linux", "darwin":
+	case "windows":
+		platform, ext = "win", "zip"
+	default:
+		return "", "", fmt.Errorf("unsupported os: %s", runtime.GOOS)
+	}
+	platform += "-x64"
+
+	// build paths
+	nodePath := filepath.Join(flags.Cache, "node", v, platform)
+	binPath := filepath.Join(nodePath, "bin", "node")
+	if runtime.GOOS == "windows" {
+		binPath = filepath.Join(nodePath, "node.exe")
+	}
+
+	// stat node path
+	fi, err := os.Stat(binPath)
+	switch {
+	case os.IsNotExist(err):
+	case err != nil:
+		return "", "", fmt.Errorf("could not stat %q: %v", binPath, err)
+	case fi.IsDir():
+		return "", "", fmt.Errorf("%q is in invalid state: manually remove to try again", nodePath)
+	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
+		return nodePath, binPath, nil
+	}
+
+	// remove existing directory
+	if err = os.RemoveAll(nodePath); err != nil {
+		return "", "", fmt.Errorf("could not remove %q: %v", nodePath, err)
+	}
+
+	// retrieve archive
+	buf, err := getNodeAndVerify(flags, v, platform, ext)
+	if err != nil {
+		return "", "", fmt.Errorf("could not retrieve node %s (%s): %v", v, platform, err)
+	}
+
+	// extract archive
+	if err = extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
+		return "", "", fmt.Errorf("unable to extract node %s (%s): %v", v, platform, err)
+	}
+
+	return nodePath, binPath, nil
+}
+
+// ltsString is a type that handles unmarshaling the lts version in node's
+// versions file.
+type ltsString string
+
+func (v *ltsString) UnmarshalJSON(buf []byte) error {
+	var s string
+	if err := json.Unmarshal(buf, &s); err == nil {
+		*v = ltsString(s)
+	}
+	return nil
+}
+
+// getNodeLtsVersion reads the available node versions and returns the most
+// recent lts release.
+func getNodeLtsVersion(flags *Flags) (string, error) {
+	type nodeVersion struct {
+		Version string
+		Files   []string
+		Lts     ltsString
+	}
+
+	// load available node versions
+	verBuf, err := getAndCache(flags, nodeDistURL+"/index.json", flags.Ttl, false, "node", "versions.json")
+	if err != nil {
+		return "", fmt.Errorf("could not retrieve available node versions: %v", err)
+	}
+
+	// parse node versions
+	var nodeVersions []nodeVersion
+	if err = json.Unmarshal(verBuf, &nodeVersions); err != nil {
+		return "", fmt.Errorf("node versions.json is invalid: %v", err)
+	}
+	if len(nodeVersions) < 1 {
+		return "", errors.New("node versions.json missing a defined version")
+	}
+
+	// sort node versions
+	vers, vs := make(map[string]nodeVersion), make([]*semver.Version, len(nodeVersions))
+	for i, nv := range nodeVersions {
+		v, err := semver.NewVersion(nv.Version)
+		if err != nil {
+			return "", fmt.Errorf("invalid node version %q: %v", nv.Version, err)
+		}
+		vers[v.String()], vs[i] = nv, v
+	}
+	sort.Sort(semver.Collection(vs))
+
+	// find latest lts
+	for i := len(vs) - 1; i >= 0; i-- {
+		if v := vers[vs[i].String()]; v.Lts != "" {
+			return v.Version, nil
+		}
+	}
+
+	return "", errors.New("could not find a lts node version")
+}
+
+// getNodeAndVerify retrieves the node.js binary distribution for the specified
+// version, platform, and file extension and verifies its hash in the
+// SHASUMS256.txt file.
+func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, error) {
+	fn := fmt.Sprintf("node-%v-%s%s", version, platform, ext)
+	urlbase := nodeDistURL + "/" + version
+
+	// grab signature files
+	txt, err := getAndCache(flags, urlbase+"/SHASUMS256.txt", 0, false, "node", version, "SHASUMS256.txt")
+	if err != nil {
+		return nil, err
+	}
+	sig, err := getAndCache(flags, urlbase+"/SHASUMS256.txt.sig", 0, false, "node", version, "SHASUMS256.txt.sig")
+	if err != nil {
+		return nil, err
+	}
+
+	// verify signature
+	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(nodeKeyring)))
+	if err != nil {
+		return nil, err
+	}
+	_, err = openpgp.CheckDetachedSignature(kr, bytes.NewReader(txt), bytes.NewReader(sig))
+	if err != nil {
+		return nil, fmt.Errorf("could not verify signature: %v", err)
+	}
+
+	// get node
+	buf, err := getAndCache(flags, urlbase+"/"+fn, 0, false, "node", fn)
+	if err != nil {
+		return nil, err
+	}
+
+	// verify hash
+	h := sha256.Sum256(buf)
+	hash := hex.EncodeToString(h[:])
+	scanner := bufio.NewScanner(bytes.NewReader(txt))
+	var found bool
+	for scanner.Scan() {
+		line := strings.Split(scanner.Text(), "  ")
+		if len(line) != 2 {
+			return nil, errors.New("SHASUMS256.txt is invalid")
+		}
+		found = found || (line[0] == hash && line[1] == fn)
+	}
+	if err = scanner.Err(); err != nil {
+		return nil, fmt.Errorf("could not read SHASUMS256.txt: %v", err)
+	}
+
+	if !found {
+		return nil, fmt.Errorf("could not find signature in SHASUMS256.txt for %s", fn)
+	}
+
+	return buf, nil
+}
+
+// checkYarn checks that yarn is available and the correct version.
+//
+// If yarn is not available, then the latest version is downloaded to the cache
+// dir and used instead.
+func checkYarn(flags *Flags) error {
+	var err error
+
+	if flags.Yarn == "" {
+		if flags.Yarn, flags.YarnBin, err = installYarn(flags); err != nil {
+			return err
+		}
+	}
+
+	yarn, err := realpath.Realpath(flags.Yarn)
+	if err != nil {
+		return err
+	}
+	flags.Yarn = yarn
+
+	if flags.YarnBin == "" {
+		if runtime.GOOS == "windows" {
+			flags.YarnBin = filepath.Join(flags.Yarn, "bin", "yarn.cmd")
+		} else {
+			flags.YarnBin = filepath.Join(flags.Yarn, "bin", "yarn")
+		}
+	}
+
+	// check yarn version
+	yarnVer, err := runCombined(flags, flags.YarnBin, "--version")
+	if err != nil {
+		return fmt.Errorf("unable to determine yarn version: %v", err)
+	}
+	if !compareSemver(strings.TrimPrefix(yarnVer, "v"), yarnConstraint) {
+		return fmt.Errorf("%s version must be %s, currently: %s", flags.YarnBin, yarnConstraint, yarnVer)
+	}
+	return nil
+}
+
+// installYarn installs yarn to the cache directory.
+func installYarn(flags *Flags) (string, string, error) {
+	v, assets, err := githubLatestAssets(flags, "yarnpkg/yarn", "yarn")
+	if err != nil {
+		return "", "", err
+	}
+
+	// build paths
+	yarnPath := filepath.Join(flags.Cache, "yarn", v)
+	binPath := filepath.Join(yarnPath, "bin", "yarn")
+	if runtime.GOOS == "windows" {
+		binPath = filepath.Join(yarnPath, "bin", "yarn.cmd")
+	}
+
+	// stat yarn path
+	fi, err := os.Stat(binPath)
+	switch {
+	case os.IsNotExist(err):
+	case err != nil:
+		return "", "", fmt.Errorf("could not stat %q: %v", binPath, err)
+	case fi.IsDir():
+		return "", "", fmt.Errorf("%q is in invalid state: manually remove to try again", yarnPath)
+	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
+		return yarnPath, binPath, nil
+	}
+
+	// remove existing directory
+	if err = os.RemoveAll(yarnPath); err != nil {
+		return "", "", fmt.Errorf("could not remove %q: %v", yarnPath, err)
+	}
+
+	// retrieve archive
+	buf, err := getYarnAndVerify(flags, v, assets)
+	if err != nil {
+		return "", "", fmt.Errorf("could not retrieve yarn %s: %v", v, err)
+	}
+
+	// create dir
+	if err = os.MkdirAll(yarnPath, 0755); err != nil {
+		return "", "", fmt.Errorf("could not create yarn %s directory: %v", v, err)
+	}
+
+	// extract archive
+	if err = extractTarGz(yarnPath, buf, fmt.Sprintf("yarn-%s", v)); err != nil {
+		return "", "", fmt.Errorf("unable to extract yarn %s: %v", v, err)
+	}
+
+	return yarnPath, binPath, nil
+}
+
+// getYarnAndVerify retrieves the node.js binary distribution for the specified
+// version, platform, and file extension and verifies its hash in the
+// SHASUMS256.txt file.
+func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byte, error) {
+	n := fmt.Sprintf("yarn-%v.tar.gz", version)
+
+	var err error
+	var buf, asc []byte
+	for _, a := range assets {
+		switch {
+		// grab tar.gz
+		case a.Name == n:
+			buf, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n)
+			if err != nil {
+				return nil, err
+			}
+
+		// grab signature
+		case a.Name == n+".asc":
+			asc, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n+".asc")
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	// verify signature
+	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(yarnKeyring)))
+	if err != nil {
+		return nil, err
+	}
+	_, err = openpgp.CheckArmoredDetachedSignature(kr, bytes.NewReader(buf), bytes.NewReader(asc))
+	if err != nil {
+		return nil, fmt.Errorf("could not verify signature: %v", err)
+	}
+
+	return buf, nil
+}
+
+// fixNodeModulesBinLinks walks all packages in flags.NodeModules, reading their bin entries from
+// package.json, and creating the appropriate symlink in flags.NodeModulesBin.
+func fixNodeModulesBinLinks(flags *Flags) error {
 	// check dirs again
 	err := checkDirs(flags)
 	if err != nil {
@@ -284,11 +620,11 @@ func fixNodeBinLinks(flags *Flags) error {
 	}
 
 	// erase all links in bin dir
-	err = filepath.Walk(flags.NodeBin, func(path string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
 		switch {
 		case err != nil:
 			return err
-		case path == flags.NodeBin:
+		case path == flags.NodeModulesBin:
 			return nil
 		case fi.Mode()&os.ModeSymlink == 0:
 			return fmt.Errorf("%s is not a symlink", path)
@@ -308,7 +644,7 @@ func fixNodeBinLinks(flags *Flags) error {
 		dir, path string
 	}
 	links := make(map[string][]link)
-	err = filepath.Walk(flags.Node, func(path string, fi os.FileInfo, err error) error {
+	err = filepath.Walk(flags.NodeModules, func(path string, fi os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -355,7 +691,7 @@ func fixNodeBinLinks(flags *Flags) error {
 
 		// determine "most appropriate" link
 		for _, z := range v {
-			rel, err := filepath.Rel(flags.Node, z.dir)
+			rel, err := filepath.Rel(flags.NodeModules, z.dir)
 			if err != nil {
 				return fmt.Errorf("could not determine node-relative path for %s: %v", z.dir, err)
 			}
@@ -371,7 +707,7 @@ func fixNodeBinLinks(flags *Flags) error {
 		if err != nil {
 			return fmt.Errorf("unable to determine path for %s: %v", linkpath, err)
 		}
-		newname := filepath.Join(flags.NodeBin, n)
+		newname := filepath.Join(flags.NodeModulesBin, n)
 
 		// check symlink exists
 		_, err = os.Stat(newname)
