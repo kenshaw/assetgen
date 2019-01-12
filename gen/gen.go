@@ -192,7 +192,7 @@ func checkSetup(flags *Flags) error {
 
 	// ensure primary directories exist
 	if err = checkDirs(flags, &flags.Cache, &flags.Build, &flags.Assets); err != nil {
-		return fmt.Errorf("could not create directories: %v", err)
+		return fmt.Errorf("unable to fix .cache build assets: %v", err)
 	}
 
 	// check node + yarn
@@ -221,7 +221,7 @@ func checkSetup(flags *Flags) error {
 
 	// check dirs node_modules + node_modules/.bin
 	if err = checkDirs(flags, &flags.NodeModules, &flags.NodeModulesBin); err != nil {
-		return fmt.Errorf("unable to fix node bin directory: %v", err)
+		return fmt.Errorf("unable to fix node_modules node_modules/.bin: %v", err)
 	}
 
 	// setup files
@@ -264,8 +264,7 @@ func checkDirs(flags *Flags, dirs ...*string) error {
 		if err != nil {
 			return fmt.Errorf("could not resolve path %q", *d)
 		}
-		err = os.MkdirAll(v, 0755)
-		if err != nil {
+		if err = os.MkdirAll(v, 0755); err != nil {
 			return fmt.Errorf("could not create directory %s: %v", v, err)
 		}
 		v, err = realpath.Realpath(v)
@@ -619,6 +618,11 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 func fixNodeModulesBinLinks(flags *Flags) error {
 	var err error
 
+	// ensure directory exists
+	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
+		return fmt.Errorf("unable to fix node_modules/.bin: %v", err)
+	}
+
 	// erase all links in bin dir
 	err = filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
 		switch {
@@ -644,10 +648,10 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 	}
 	links := make(map[string][]link)
 	err = filepath.Walk(flags.NodeModules, func(path string, fi os.FileInfo, err error) error {
-		if err != nil {
+		switch {
+		case err != nil:
 			return err
-		}
-		if fi.IsDir() || filepath.Base(path) != "package.json" {
+		case fi.IsDir() || filepath.Base(path) != "package.json":
 			return nil
 		}
 
