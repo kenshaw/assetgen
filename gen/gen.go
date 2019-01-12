@@ -232,7 +232,7 @@ func checkSetup(flags *Flags) error {
 	// do pure lockfile install
 	if !nodeModulesPresent && yarnLockPresent {
 		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile"); err != nil {
-			return errors.New("unable to install locked deps: please run yarn manually")
+			return errors.New("unable to install locked deps: please fix manually")
 		}
 	}
 
@@ -247,9 +247,9 @@ func checkSetup(flags *Flags) error {
 		}
 	}
 
-	// run yarn check
-	if err = runSilent(flags, flags.YarnBin, "check"); err != nil {
-		return errors.New("yarn is out of sync: please run yarn manually")
+	// run yarn install
+	if err = runSilent(flags, flags.YarnBin, "install"); err != nil {
+		return errors.New("yarn is out of sync: please fix manually")
 	}
 
 	return nil
