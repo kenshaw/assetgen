@@ -519,10 +519,14 @@ func (s *Script) addSass(_, dir string) {
 			return fmt.Errorf("could not write manifest.json: %v", err)
 		}
 
-		// write sass.js to build dir
+		// write sass.js and _assetgen.scss to build dir
 		err = ioutil.WriteFile(filepath.Join(s.flags.Build, sassJs), []byte(tplf(sassJs)), 0644)
 		if err != nil {
 			return fmt.Errorf("could not write %s: %v", sassJs, err)
+		}
+		err = ioutil.WriteFile(filepath.Join(s.flags.Build, assetgenScss), []byte(tplf(assetgenScss)), 0644)
+		if err != nil {
+			return fmt.Errorf("could not write: %s: %v", assetgenScss, err)
 		}
 
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -549,6 +553,7 @@ func (s *Script) addSass(_, dir string) {
 				//"--source-map-root=" + s.flags.Wd,
 				"--functions=" + filepath.Join(s.flags.Build, sassJs),
 				"--output=" + filepath.Join(s.flags.Build, cssDir),
+				"--include-path=" + s.flags.Build,
 			}
 			for _, z := range s.sassIncludes {
 				params = append(params, "--include-path="+z)
@@ -783,6 +788,12 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 				n = fmt.Sprintf("__INV:%s__", z)
 			}
 			return fmt.Sprintf("url('/_/%s')", n), nil
+		},
+		"googlefont($font)": func(v ...interface{}) (interface{}, error) {
+			fonts := map[string]string{
+				"font-family": "'AOEUOEU'",
+			}
+			return fonts, nil
 		},
 	})
 	if err != nil {

@@ -34,6 +34,27 @@ function doReq(params, callback) {
   });
 }
 
+// conv handles recursively converting a sass type.
+function conv(v) {
+  if (v instanceof Array) {
+    var l = sass.types.List(v.length);
+    for (var i = 0; i < v.length; i++) {
+      l.setValue(i, conv(v[i]));
+    }
+    return l
+  } else if (v instanceof Object) {
+    var keys = Object.keys(v);
+    var m = sass.types.Map(keys.length);
+    for (var i = 0; i < keys.length; i++) {
+      m.setKey(i, conv(keys[i]));
+      m.setValue(i, conv(v[keys[i]]));
+    }
+    return m;
+  }
+  var typ = typeof v;
+  return sass.types[typ.charAt(0).toUpperCase() + typ.slice(1)](v);
+}
+
 // doCall performs a call ipc callback server.
 function doCall(fn) {
   return function() {
@@ -41,7 +62,6 @@ function doCall(fn) {
     for (var i = 0; i < arguments.length - 1; i++) {
       args[i] = arguments[i].getValue();
     }
-
     var done = false;
     var ret = null;
     doReq({type : 'call', params : {name : fn, args : args}}, function(r) {
@@ -49,9 +69,7 @@ function doCall(fn) {
       done = true;
     });
     deasync.loopWhile(function() { return !done; });
-
-    tn = typeof ret;
-    return sass.types[tn.charAt(0).toUpperCase() + tn.slice(1)](ret);
+    return conv(ret);
   };
 }
 

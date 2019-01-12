@@ -1,0 +1,17 @@
+// googlefont mixin.
+@mixin googlefont($font) {
+  @font-face {
+    @each $k, $v in googlefont($font) {
+      #{$k}: $v;
+    }
+  }
+}
+
+// fontawesome mixin.
+@mixin fontawesome() {
+  @font-face {
+    @each $k, $v in fontawesome() {
+      #{$k}: $v;
+    }
+  }
+}

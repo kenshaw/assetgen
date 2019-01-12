@@ -47,6 +47,7 @@ const (
 	sassDir      = "sass"
 	cssDir       = "css"
 	sassJs       = "sass.js"
+	assetgenScss = "_assetgen.scss"
 	templatesDir = "templates"
 
 	nodeDistURL = "https://nodejs.org/dist"
