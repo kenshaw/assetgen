@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -369,18 +368,6 @@ func installNode(flags *Flags) (string, string, error) {
 	// extract archive
 	if err = extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
 		return "", "", fmt.Errorf("unable to extract node %s (%s): %v", v, platform, err)
-	}
-
-	err = filepath.Walk(nodePath, func(n string, fi os.FileInfo, err error) error {
-		switch {
-		case err != nil:
-			return err
-		}
-		log.Printf(">>> %s", n)
-		return nil
-	})
-	if err != nil {
-		return "", "", fmt.Errorf("unable to walk directory: %v", err)
 	}
 
 	return nodePath, binPath, nil
