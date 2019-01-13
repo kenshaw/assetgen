@@ -6,12 +6,3 @@
     }
   }
 }
-
-// fontawesome mixin.
-@mixin fontawesome() {
-  @font-face {
-    @each $k, $v in fontawesome() {
-      #{$k}: $v;
-    }
-  }
-}

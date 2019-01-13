@@ -12,12 +12,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/gobwas/glob"
 	"github.com/mattn/anko/vm"
 	qtcparser "github.com/valyala/quicktemplate/parser"
+	"github.com/yookoala/realpath"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/brankas/assetgen/gen/ipc"
@@ -510,13 +512,11 @@ func (s *Script) addSass(_, dir string) {
 	}
 
 	s.exec = append(s.exec, func() error {
-		// write temporary manifest
-		manifest, err := s.dist.ManifestBytes()
-		if err != nil {
-			return fmt.Errorf("could not generate manifest: %v", err)
-		}
-		if err = ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
-			return fmt.Errorf("could not write manifest.json: %v", err)
+		var err error
+
+		// ensure build/assetgen exists
+		if err = os.MkdirAll(filepath.Join(s.flags.Build, "assetgen"), 0755); err != nil {
+			return fmt.Errorf("could not create assetgen directory: %v", err)
 		}
 
 		// write sass.js and _assetgen.scss to build dir
@@ -524,9 +524,26 @@ func (s *Script) addSass(_, dir string) {
 		if err != nil {
 			return fmt.Errorf("could not write %s: %v", sassJs, err)
 		}
-		err = ioutil.WriteFile(filepath.Join(s.flags.Build, assetgenScss), []byte(tplf(assetgenScss)), 0644)
+		err = ioutil.WriteFile(filepath.Join(s.flags.Build, "assetgen", assetgenScss), []byte(tplf(assetgenScss)), 0644)
 		if err != nil {
 			return fmt.Errorf("could not write: %s: %v", assetgenScss, err)
+		}
+
+		// write fontawesome to build dir
+		if err = installFontAwesome(s.flags, s.dist); err != nil {
+			return fmt.Errorf("could not install fontawesome: %v", err)
+		}
+
+		// FIXME: other than for debugging purposes, is it necessary to write
+		// FIXME: the manifest to disk?
+
+		// write temporary manifest
+		manifest, err := s.dist.ManifestBytes()
+		if err != nil {
+			return fmt.Errorf("could not generate manifest: %v", err)
+		}
+		if err = ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
+			return fmt.Errorf("could not write manifest.json: %v", err)
 		}
 
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -553,7 +570,8 @@ func (s *Script) addSass(_, dir string) {
 				//"--source-map-root=" + s.flags.Wd,
 				"--functions=" + filepath.Join(s.flags.Build, sassJs),
 				"--output=" + filepath.Join(s.flags.Build, cssDir),
-				"--include-path=" + s.flags.Build,
+				"--include-path=" + filepath.Join(s.flags.Build, "assetgen"),
+				"--include-path=" + filepath.Join(s.flags.Build, "fontawesome"),
 			}
 			for _, z := range s.sassIncludes {
 				params = append(params, "--include-path="+z)
@@ -775,6 +793,19 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 				return nil, errors.New("$url must be a string")
 			}
 
+			// fix webfonts path (fontawesome)
+			if strings.HasPrefix(z, "../webfonts/") {
+				z = z[2:]
+			}
+
+			// save query string
+			var qstr string
+			if i := strings.LastIndex(z, "?"); i != -1 {
+				qstr, z = z[i:], z[:i]
+			} else if i := strings.LastIndex(z, "#"); i != -1 {
+				qstr, z = z[i:], z[:i]
+			}
+
 			// grab manifest
 			m, err := s.dist.Manifest()
 			if err != nil {
@@ -785,13 +816,17 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 			n, ok := m["/"+strings.TrimPrefix(z, "/")]
 			if !ok {
 				warnf(s.flags, "no asset %q in manifest", z)
-				n = fmt.Sprintf("__INV:%s__", z)
+				n = fmt.Sprintf("__INV:%s%s__", z, qstr)
 			}
-			return fmt.Sprintf("url('/_/%s')", n), nil
+			return fmt.Sprintf("url('/_/%s%s')", n, qstr), nil
 		},
+
+		// googlefont($font) downloads the google font.
 		"googlefont($font)": func(v ...interface{}) (interface{}, error) {
-			fonts := map[string]string{
-				"font-family": "'AOEUOEU'",
+			fonts := []map[string]string{
+				map[string]string{
+					"font-family": "'AOEUOEU'",
+				},
 			}
 			return fonts, nil
 		},
@@ -843,4 +878,127 @@ func (s *Script) findNodeModulesFile(jd jsdep) (string, error) {
 		return "", fmt.Errorf("could not find %q in npm package %s", jd.path, jd.name)
 	}
 	return found, nil
+}
+
+// fixNodeModulesBinLinks walks all packages in flags.NodeModules, reading their bin entries from
+// package.json, and creating the appropriate symlink in flags.NodeModulesBin.
+func fixNodeModulesBinLinks(flags *Flags) error {
+	var err error
+
+	// ensure directory exists
+	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
+		return fmt.Errorf("unable to fix node_modules/.bin: %v", err)
+	}
+
+	// erase all links in bin dir
+	err = filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case path == flags.NodeModulesBin:
+			return nil
+		case fi.Mode()&os.ModeSymlink == 0:
+			return fmt.Errorf("%s is not a symlink", path)
+		}
+		if err = os.Remove(path); err != nil {
+			return fmt.Errorf("unable to remove %s: %v", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// grab all bin links defined in package.json
+	type link struct {
+		dir, path string
+	}
+	links := make(map[string][]link)
+	err = filepath.Walk(flags.NodeModules, func(path string, fi os.FileInfo, err error) error {
+		switch {
+		case err != nil:
+			return err
+		case fi.IsDir() || filepath.Base(path) != "package.json":
+			return nil
+		}
+
+		// decode package.json
+		buf, err := ioutil.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		var pkgDesc struct {
+			Name string      `json:"name"`
+			Bin  interface{} `json:"bin"`
+		}
+		err = json.Unmarshal(buf, &pkgDesc)
+		if err != nil {
+			warnf(flags, "could not unmarshal %s: %v", path, err)
+			return nil
+		}
+		if pkgDesc.Bin == nil {
+			return nil
+		}
+
+		// add to links
+		pathDir := filepath.Dir(path)
+		for n, v := range forceMap(pkgDesc.Bin, pkgDesc.Name, filepath.Base(pathDir)) {
+			links[n] = append(links[n], link{
+				dir:  pathDir,
+				path: v,
+			})
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// process links
+	for n, v := range links {
+		l := v[0]
+
+		// determine "most appropriate" link
+		for _, z := range v {
+			rel, err := filepath.Rel(flags.NodeModules, z.dir)
+			if err != nil {
+				return fmt.Errorf("could not determine node-relative path for %s: %v", z.dir, err)
+			}
+			if !strings.Contains(rel, string(filepath.Separator)) {
+				l = z
+				break
+			}
+		}
+
+		// create symlink
+		linkpath := filepath.Join(l.dir, l.path)
+		oldname, err := realpath.Realpath(linkpath)
+		if err != nil {
+			return fmt.Errorf("unable to determine path for %s: %v", linkpath, err)
+		}
+		newname := filepath.Join(flags.NodeModulesBin, n)
+
+		// check symlink exists
+		_, err = os.Stat(newname)
+		switch {
+		case os.IsNotExist(err):
+		case err != nil:
+			return err
+		}
+
+		// symlink
+		if err = os.Symlink(oldname, newname); err != nil {
+			return fmt.Errorf("unable to symlink %s to %s: %v", newname, oldname, err)
+		}
+
+		// fix permissions
+		if runtime.GOOS != "windows" {
+			if err = os.Chmod(linkpath, 0755); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
 }

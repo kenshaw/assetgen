@@ -523,6 +523,7 @@ loop:
 	return nil
 }
 
+// githubAsset wraps asset information for a github release.
 type githubAsset struct {
 	BrowserDownloadURL string `json:"browser_download_url"`
 	Name               string `json:"name"`
