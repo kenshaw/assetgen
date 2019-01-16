@@ -19,20 +19,24 @@ import (
 
 // Pack handles packing binary assets into a Go package.
 type Pack struct {
+	fs afero.Fs
+	h  map[string]string
+
 	pkg string
-	fs  afero.Fs
-	h   map[string]string
 
 	sync.RWMutex
 }
 
-// New creates a new binary asset packer.
-func New(pkg string) *Pack {
-	return &Pack{
-		pkg: pkg,
-		fs:  afero.NewMemMapFs(),
-		h:   make(map[string]string),
+// New creates a new binary asset packer with the specified pkg name.
+func New(opts ...Option) *Pack {
+	p := &Pack{
+		fs: afero.NewMemMapFs(),
+		h:  make(map[string]string),
 	}
+	for _, o := range opts {
+		o(p)
+	}
+	return p
 }
 
 // Add adds a file with name to pack from r.
@@ -118,14 +122,20 @@ func (p *Pack) ManifestBytes() ([]byte, error) {
 	return json.MarshalIndent(m, "", "  ")
 }
 
-// Pack packs binary assets.
+// WriteTo writes to the specified out file, with the specified variable name.
 func (p *Pack) WriteTo(out, name string) error {
 	p.RLock()
 	defer p.RUnlock()
+
+	pkg := p.pkg
+	if pkg == "" {
+		pkg = filepath.Base(filepath.Dir(out))
+	}
+
 	return vfsgen.Generate(p, vfsgen.Options{
 		VariableName:  name,
 		Filename:      out,
-		PackageName:   p.pkg,
+		PackageName:   pkg,
 		ForceAllTypes: true,
 	})
 }

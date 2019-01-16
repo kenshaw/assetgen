@@ -79,7 +79,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	s := &Script{
 		flags: flags,
 		logf:  log.Printf,
-		dist:  pack.New("assets"),
+		dist:  pack.New(),
 	}
 
 	// create scripting runtime
@@ -154,7 +154,7 @@ func (s *Script) getAndPack(dest, src, name string) error {
 	}
 
 	// write packed data
-	p := pack.New(filepath.Base(filepath.Dir(dest)))
+	p := pack.New()
 	p.AddBytes(filepath.Base(src), buf)
 	return p.WriteTo(dest, name)
 }
@@ -622,7 +622,7 @@ func (s *Script) addSass(_, dir string) {
 // to the packed data (but not to the manifest).
 func (s *Script) addLocales(_, dir string) {
 	s.exec = append(s.exec, func() error {
-		p := pack.New("locales")
+		p := pack.New()
 		err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
 			switch {
 			case err != nil:
@@ -775,6 +775,11 @@ func (s *Script) Execute() error {
 
 	// build and write manifest.go
 	src := tplf("manifest.go") + tplf("manifest.go.extra", manifest, rev)
+	if !strings.HasPrefix(src, "package assets\n") {
+		panic("invalid manifest.go")
+	}
+	src = "package " + filepath.Base(s.flags.Assets) + strings.TrimPrefix(src, "package assets")
+
 	// TODO: do go imports here -- currently imports.Process isn't working properly with large set of assets.
 	return ioutil.WriteFile(filepath.Join(s.flags.Assets, "manifest.go"), []byte(src), 0644)
 }

@@ -29,7 +29,7 @@ func run() error {
 	pkg := filepath.Join(os.Getenv("GOPATH"), "src", *flagPkg)
 	out := filepath.Join(pkg, *flagOut)
 
-	p := pack.New(filepath.Base(filepath.Dir(out)))
+	p := pack.New()
 	err := filepath.Walk(filepath.Join(pkg, *flagDir), func(n string, fi os.FileInfo, err error) error {
 		fn := filepath.Base(n)
 		switch {
