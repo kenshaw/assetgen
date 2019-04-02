@@ -4,6 +4,9 @@ package parser
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strconv"
+	"strings"
 	"unicode"
 
 	"github.com/mattn/anko/ast"
@@ -16,8 +19,7 @@ const (
 	EOL = '\n'
 )
 
-// Error provides a convenient interface for handling runtime error.
-// It can be Error interface with type cast which can call Pos().
+// Error is a parse error.
 type Error struct {
 	Message  string
 	Pos      ast.Position
@@ -25,7 +27,7 @@ type Error struct {
 	Fatal    bool
 }
 
-// Error returns the error message.
+// Error returns the parse error message.
 func (e *Error) Error() string {
 	return e.Message
 }
@@ -67,7 +69,16 @@ var opName = map[string]int{
 	"type":     TYPE,
 	"len":      LEN,
 	"delete":   DELETE,
+	"close":    CLOSE,
+	"map":      MAP,
 }
+
+var (
+	nilValue   = reflect.New(reflect.TypeOf((*interface{})(nil)).Elem()).Elem()
+	trueValue  = reflect.ValueOf(true)
+	falseValue = reflect.ValueOf(false)
+	oneLiteral = &ast.LiteralExpr{Literal: reflect.ValueOf(int64(1))}
+)
 
 // Init resets code to scan.
 func (s *Scanner) Init(src string) {
@@ -182,14 +193,11 @@ retry:
 			default:
 				s.back()
 				tok = int(ch)
-				lit = string(ch)
+				lit = "-"
 			}
 		case '*':
 			s.next()
 			switch s.peek() {
-			case '*':
-				tok = POW
-				lit = "**"
 			case '=':
 				tok = MULEQ
 				lit = "*="
@@ -341,14 +349,6 @@ func isBlank(ch rune) bool {
 	return ch == ' ' || ch == '\t' || ch == '\r'
 }
 
-func appendNumberAndPoint(s *Scanner, ret []rune) []rune {
-	for isDigit(s.peek()) || s.peek() == '.' {
-		ret = append(ret, s.peek())
-		s.next()
-	}
-	return ret
-}
-
 // peek returns current rune in the code.
 func (s *Scanner) peek() rune {
 	if s.reachEOF() {
@@ -415,34 +415,66 @@ func (s *Scanner) scanIdentifier() (string, error) {
 
 // scanNumber returns number beginning at current position.
 func (s *Scanner) scanNumber() (string, error) {
-	var ret []rune
-	ch := s.peek()
-	ret = append(ret, ch)
+	result := []rune{s.peek()}
 	s.next()
-	if ch == '0' && s.peek() == 'x' {
-		ret = append(ret, s.peek())
+
+	if result[0] == '0' && (s.peek() == 'x' || s.peek() == 'X') {
+		// hex
+		result = append(result, 'x')
 		s.next()
 		for isHex(s.peek()) {
-			ret = append(ret, s.peek())
+			result = append(result, s.peek())
 			s.next()
 		}
 	} else {
-		ret = appendNumberAndPoint(s, ret)
-		if s.peek() == 'e' {
-			ret = append(ret, s.peek())
-			s.next()
-			if isDigit(s.peek()) || s.peek() == '+' || s.peek() == '-' {
-				ret = append(ret, s.peek())
+		// non-hex
+		found := false
+		for {
+			if isDigit(s.peek()) {
+				// is digit
+				result = append(result, s.peek())
 				s.next()
-				ret = appendNumberAndPoint(s, ret)
+				continue
 			}
-			ret = appendNumberAndPoint(s, ret)
-		}
-		if isLetter(s.peek()) {
-			return "", errors.New("identifier starts immediately after numeric literal")
+
+			if s.peek() == '.' {
+				// is .
+				result = append(result, '.')
+				s.next()
+				continue
+			}
+
+			if s.peek() == 'e' || s.peek() == 'E' {
+				// is e
+				if found {
+					return "", errors.New("unexpected " + string(s.peek()))
+				}
+				found = true
+				s.next()
+
+				// check if + or -
+				if s.peek() == '+' || s.peek() == '-' {
+					// add e with + or -
+					result = append(result, 'e')
+					result = append(result, s.peek())
+					s.next()
+				} else {
+					// add e, but next char not + or -
+					result = append(result, 'e')
+				}
+				continue
+			}
+
+			// not digit, e, nor .
+			break
 		}
 	}
-	return string(ret), nil
+
+	if isLetter(s.peek()) {
+		return "", errors.New("identifier starts immediately after numeric literal")
+	}
+
+	return string(result), nil
 }
 
 // scanRawString returns raw-string starting at current position.
@@ -507,11 +539,11 @@ eos:
 
 // Lexer provides interface to parse codes.
 type Lexer struct {
-	s     *Scanner
-	lit   string
-	pos   ast.Position
-	e     error
-	stmts []ast.Stmt
+	s    *Scanner
+	lit  string
+	pos  ast.Position
+	e    error
+	stmt ast.Stmt
 }
 
 // Lex scans the token and literals.
@@ -533,12 +565,12 @@ func (l *Lexer) Error(msg string) {
 }
 
 // Parse provides way to parse the code using Scanner.
-func Parse(s *Scanner) ([]ast.Stmt, error) {
+func Parse(s *Scanner) (ast.Stmt, error) {
 	l := Lexer{s: s}
 	if yyParse(&l) != 0 {
 		return nil, l.e
 	}
-	return l.stmts, l.e
+	return l.stmt, l.e
 }
 
 // EnableErrorVerbose enabled verbose errors from the parser
@@ -547,9 +579,49 @@ func EnableErrorVerbose() {
 }
 
 // ParseSrc provides way to parse the code from source.
-func ParseSrc(src string) ([]ast.Stmt, error) {
+func ParseSrc(src string) (ast.Stmt, error) {
 	scanner := &Scanner{
 		src: []rune(src),
 	}
 	return Parse(scanner)
+}
+
+func toNumber(numString string) (reflect.Value, error) {
+	// hex
+	if len(numString) > 2 && numString[0:2] == "0x" {
+		i, err := strconv.ParseInt(numString[2:], 16, 64)
+		if err != nil {
+			return nilValue, err
+		}
+		return reflect.ValueOf(i), nil
+	}
+
+	// hex
+	if len(numString) > 3 && numString[0:3] == "-0x" {
+		i, err := strconv.ParseInt("-"+numString[3:], 16, 64)
+		if err != nil {
+			return nilValue, err
+		}
+		return reflect.ValueOf(i), nil
+	}
+
+	// float
+	if strings.Contains(numString, ".") || strings.Contains(numString, "e") {
+		f, err := strconv.ParseFloat(numString, 64)
+		if err != nil {
+			return nilValue, err
+		}
+		return reflect.ValueOf(f), nil
+	}
+
+	// int
+	i, err := strconv.ParseInt(numString, 10, 64)
+	if err != nil {
+		return nilValue, err
+	}
+	return reflect.ValueOf(i), nil
+}
+
+func stringToValue(aString string) reflect.Value {
+	return reflect.ValueOf(aString)
 }

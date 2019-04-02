@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"strings"
@@ -19,86 +20,66 @@ type EnvResolver interface {
 // Env provides interface to run VM. This mean function scope and blocked-scope.
 // If stack goes to blocked-scope, it will make new Env.
 type Env struct {
-	name      string
-	env       map[string]reflect.Value
-	typ       map[string]reflect.Type
-	parent    *Env
-	interrupt *bool
-	external  EnvResolver
+	name     string
+	env      map[string]reflect.Value
+	typ      map[string]reflect.Type
+	parent   *Env
+	external EnvResolver
 	sync.RWMutex
 }
 
-var basicTypes = []struct {
-	name string
-	typ  reflect.Type
-}{
-	{name: "interface", typ: reflect.ValueOf([]interface{}{int64(1)}).Index(0).Type()},
-	{name: "bool", typ: reflect.TypeOf(true)},
-	{name: "string", typ: reflect.TypeOf("a")},
-	{name: "int", typ: reflect.TypeOf(int(1))},
-	{name: "int32", typ: reflect.TypeOf(int32(1))},
-	{name: "int64", typ: reflect.TypeOf(int64(1))},
-	{name: "uint", typ: reflect.TypeOf(uint(1))},
-	{name: "uint32", typ: reflect.TypeOf(uint32(1))},
-	{name: "uint64", typ: reflect.TypeOf(uint64(1))},
-	{name: "byte", typ: reflect.TypeOf(byte(1))},
-	{name: "rune", typ: reflect.TypeOf('a')},
-	{name: "float32", typ: reflect.TypeOf(float32(1))},
-	{name: "float64", typ: reflect.TypeOf(float64(1))},
-}
-
-func newBasicTypes() map[string]reflect.Type {
-	types := make(map[string]reflect.Type, len(basicTypes))
-	for i := 0; i < len(basicTypes); i++ {
-		types[basicTypes[i].name] = basicTypes[i].typ
-	}
-	return types
+var basicTypes = map[string]reflect.Type{
+	"interface": reflect.ValueOf([]interface{}{int64(1)}).Index(0).Type(),
+	"bool":      reflect.TypeOf(true),
+	"string":    reflect.TypeOf("a"),
+	"int":       reflect.TypeOf(int(1)),
+	"int32":     reflect.TypeOf(int32(1)),
+	"int64":     reflect.TypeOf(int64(1)),
+	"uint":      reflect.TypeOf(uint(1)),
+	"uint32":    reflect.TypeOf(uint32(1)),
+	"uint64":    reflect.TypeOf(uint64(1)),
+	"byte":      reflect.TypeOf(byte(1)),
+	"rune":      reflect.TypeOf('a'),
+	"float32":   reflect.TypeOf(float32(1)),
+	"float64":   reflect.TypeOf(float64(1)),
 }
 
 // NewEnv creates new global scope.
 func NewEnv() *Env {
-	b := false
-
 	return &Env{
-		env:       make(map[string]reflect.Value),
-		typ:       newBasicTypes(),
-		parent:    nil,
-		interrupt: &b,
+		env:    make(map[string]reflect.Value),
+		typ:    make(map[string]reflect.Type),
+		parent: nil,
 	}
 }
 
 // NewEnv creates new child scope.
 func (e *Env) NewEnv() *Env {
 	return &Env{
-		env:       make(map[string]reflect.Value),
-		typ:       make(map[string]reflect.Type),
-		parent:    e,
-		name:      e.name,
-		interrupt: e.interrupt,
+		env:    make(map[string]reflect.Value),
+		typ:    make(map[string]reflect.Type),
+		parent: e,
+		name:   e.name,
 	}
 }
 
 // NewPackage creates a new env with a name
 func NewPackage(n string) *Env {
-	b := false
-
 	return &Env{
-		env:       make(map[string]reflect.Value),
-		typ:       make(map[string]reflect.Type),
-		parent:    nil,
-		name:      n,
-		interrupt: &b,
+		env:    make(map[string]reflect.Value),
+		typ:    make(map[string]reflect.Type),
+		parent: nil,
+		name:   n,
 	}
 }
 
 // NewPackage creates a new env with a name under the parent env
 func (e *Env) NewPackage(n string) *Env {
 	return &Env{
-		env:       make(map[string]reflect.Value),
-		typ:       make(map[string]reflect.Type),
-		parent:    e,
-		name:      n,
-		interrupt: e.interrupt,
+		env:    make(map[string]reflect.Value),
+		typ:    make(map[string]reflect.Type),
+		parent: e,
+		name:   n,
 	}
 }
 
@@ -133,13 +114,13 @@ func (e *Env) SetExternal(res EnvResolver) {
 	e.external = res
 }
 
-// NewModule creates new module scope as global.
+// NewModule creates new module.
 func (e *Env) NewModule(n string) *Env {
 	m := &Env{
-		env:       make(map[string]reflect.Value),
-		parent:    e,
-		name:      n,
-		interrupt: e.interrupt,
+		env:    make(map[string]reflect.Value),
+		typ:    make(map[string]reflect.Type),
+		parent: e,
+		name:   n,
 	}
 	e.Define(n, m)
 	return m
@@ -203,6 +184,9 @@ func (e *Env) Type(k string) (reflect.Type, error) {
 		}
 	}
 	if e.parent == nil {
+		if v, ok := basicTypes[k]; ok {
+			return v, nil
+		}
 		return nilType, fmt.Errorf("undefined type '%s'", k)
 	}
 	return e.parent.Type(k)
@@ -212,9 +196,6 @@ func (e *Env) Type(k string) (reflect.Type, error) {
 // found or returns error.
 func (e *Env) Get(k string) (interface{}, error) {
 	rv, err := e.get(k)
-	if !rv.IsValid() || !rv.CanInterface() {
-		return nil, err
-	}
 	return rv.Interface(), err
 }
 
@@ -395,30 +376,38 @@ func (e *Env) Dump() {
 
 // Execute parses and runs source in current scope.
 func (e *Env) Execute(src string) (interface{}, error) {
-	stmts, err := parser.ParseSrc(src)
+	return e.ExecuteContext(context.Background(), src)
+}
+
+// ExecuteContext parses and runs source in current scope.
+func (e *Env) ExecuteContext(ctx context.Context, src string) (interface{}, error) {
+	stmt, err := parser.ParseSrc(src)
 	if err != nil {
 		return nilValue, err
 	}
-	return Run(stmts, e)
+	return RunContext(ctx, stmt, e)
 }
 
-// Run runs statements in current scope.
-func (e *Env) Run(stmts []ast.Stmt) (interface{}, error) {
-	return Run(stmts, e)
+// Run runs statement in current scope.
+func (e *Env) Run(stmt ast.Stmt) (interface{}, error) {
+	return e.RunContext(context.Background(), stmt)
+}
+
+// RunContext runs statement in current scope.
+func (e *Env) RunContext(ctx context.Context, stmt ast.Stmt) (interface{}, error) {
+	return RunContext(ctx, stmt, e)
 }
 
 // Copy the state of the virtual machine environment
 func (e *Env) Copy() *Env {
 	e.Lock()
 	defer e.Unlock()
-	b := false
 	copy := Env{
-		name:      e.name,
-		env:       make(map[string]reflect.Value),
-		typ:       make(map[string]reflect.Type),
-		parent:    e.parent,
-		interrupt: &b,
-		external:  e.external,
+		name:     e.name,
+		env:      make(map[string]reflect.Value),
+		typ:      make(map[string]reflect.Type),
+		parent:   e.parent,
+		external: e.external,
 	}
 	for name, value := range e.env {
 		copy.env[name] = value

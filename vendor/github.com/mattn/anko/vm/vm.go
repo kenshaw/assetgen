@@ -1,22 +1,35 @@
 package vm
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"os"
 	"reflect"
-	"strings"
 
 	"github.com/mattn/anko/ast"
 	"github.com/mattn/anko/internal/corelib"
-	"github.com/mattn/anko/parser"
 )
 
 type (
-	// Error provides a convenient interface for handling runtime error.
-	// It can be Error interface with type cast which can call Pos().
+	// Error is a VM run error.
 	Error struct {
 		Message string
 		Pos     ast.Position
+	}
+
+	// runInfo provides run incoming and outgoing information
+	runInfoStruct struct {
+		// incoming
+		ctx      context.Context
+		env      *Env
+		stmt     ast.Stmt
+		expr     ast.Expr
+		operator ast.Operator
+
+		// outgoing
+		rv  reflect.Value
+		err error
 	}
 )
 
@@ -28,11 +41,13 @@ var (
 	reflectValueType   = reflect.TypeOf(reflect.Value{})
 	errorType          = reflect.ValueOf([]error{nil}).Index(0).Type()
 	vmErrorType        = reflect.TypeOf(&Error{})
+	contextType        = reflect.TypeOf((*context.Context)(nil)).Elem()
 
 	nilValue                  = reflect.New(reflect.TypeOf((*interface{})(nil)).Elem()).Elem()
 	trueValue                 = reflect.ValueOf(true)
 	falseValue                = reflect.ValueOf(false)
 	zeroValue                 = reflect.Value{}
+	reflectValueNilValue      = reflect.ValueOf(nilValue)
 	reflectValueErrorNilValue = reflect.ValueOf(reflect.New(errorType).Elem())
 
 	// ErrBreak when there is an unexpected break statement
@@ -45,65 +60,34 @@ var (
 	ErrInterrupt = errors.New("execution interrupted")
 )
 
-// newStringError makes error interface with message.
+// Error returns the VM error message.
+func (e *Error) Error() string {
+	return e.Message
+}
+
+// newError makes VM error from error
+func newError(pos ast.Pos, err error) error {
+	if err == nil {
+		return nil
+	}
+	if pos == nil {
+		return &Error{Message: err.Error(), Pos: ast.Position{Line: 1, Column: 1}}
+	}
+	return &Error{Message: err.Error(), Pos: pos.Position()}
+}
+
+// newStringError makes VM error from string
 func newStringError(pos ast.Pos, err string) error {
+	if err == "" {
+		return nil
+	}
 	if pos == nil {
 		return &Error{Message: err, Pos: ast.Position{Line: 1, Column: 1}}
 	}
 	return &Error{Message: err, Pos: pos.Position()}
 }
 
-// newErrorf makes error interface with message.
-func newErrorf(pos ast.Pos, format string, args ...interface{}) error {
-	return &Error{Message: fmt.Sprintf(format, args...), Pos: pos.Position()}
-}
-
-// newError makes error interface with message.
-// This doesn't overwrite last error.
-func newError(pos ast.Pos, err error) error {
-	if err == nil {
-		return nil
-	}
-	if err == ErrBreak || err == ErrContinue || err == ErrReturn {
-		return err
-	}
-	if pe, ok := err.(*parser.Error); ok {
-		return pe
-	}
-	if ee, ok := err.(*Error); ok {
-		return ee
-	}
-	return &Error{Message: err.Error(), Pos: pos.Position()}
-}
-
-// Error returns the error message.
-func (e *Error) Error() string {
-	return e.Message
-}
-
-// Interrupt interrupts the execution of any running statements in the specified environment.
-// This includes all parent & child environments.
-// Note that the execution is not instantly aborted: after a call to Interrupt,
-// the current running statement will finish, but the next statement will not run,
-// and instead will return a nilValue and an ErrInterrupt.
-func Interrupt(env *Env) {
-	env.Lock()
-	*(env.interrupt) = true
-	env.Unlock()
-}
-
-// ClearInterrupt removes the interrupt flag from specified environment.
-// This includes all parent & child environments.
-func ClearInterrupt(env *Env) {
-	env.Lock()
-	*(env.interrupt) = false
-	env.Unlock()
-}
-
 func isNil(v reflect.Value) bool {
-	if !v.IsValid() {
-		return false
-	}
 	switch v.Kind() {
 	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
 		// from reflect IsNil:
@@ -128,14 +112,6 @@ func isNum(v reflect.Value) bool {
 
 // equal returns true when lhsV and rhsV is same value.
 func equal(lhsV, rhsV reflect.Value) bool {
-	lhsNotValid, rhsVNotValid := !lhsV.IsValid(), !rhsV.IsValid()
-	if lhsNotValid && rhsVNotValid {
-		return true
-	}
-	if (!lhsNotValid && rhsVNotValid) || (lhsNotValid && !rhsVNotValid) {
-		return false
-	}
-
 	lhsIsNil, rhsIsNil := isNil(lhsV), isNil(rhsV)
 	if lhsIsNil && rhsIsNil {
 		return true
@@ -193,38 +169,36 @@ func equal(lhsV, rhsV reflect.Value) bool {
 		return lhsB == rhsB
 	}
 
-	if lhsV.CanInterface() && rhsV.CanInterface() {
-		return reflect.DeepEqual(lhsV.Interface(), rhsV.Interface())
-	}
-	return reflect.DeepEqual(lhsV, rhsV)
+	return reflect.DeepEqual(lhsV.Interface(), rhsV.Interface())
 }
 
 func getMapIndex(key reflect.Value, aMap reflect.Value) reflect.Value {
-	if !aMap.IsValid() || aMap.IsNil() {
+	if aMap.IsNil() {
 		return nilValue
 	}
 
-	keyType := key.Type()
-	if keyType == interfaceType && aMap.Type().Key() != interfaceType {
-		if key.Elem().IsValid() && !key.Elem().IsNil() {
-			keyType = key.Elem().Type()
-		}
-	}
-	if keyType != aMap.Type().Key() && aMap.Type().Key() != interfaceType {
+	var err error
+	key, err = convertReflectValueToType(key, aMap.Type().Key())
+	if err != nil {
 		return nilValue
 	}
 
 	// From reflect MapIndex:
 	// It returns the zero Value if key is not found in the map or if v represents a nil map.
 	value := aMap.MapIndex(key)
+	if !value.IsValid() {
+		return nilValue
+	}
 
-	if value.IsValid() && value.CanInterface() && aMap.Type().Elem() == interfaceType && !value.IsNil() {
+	if aMap.Type().Elem() == interfaceType && !value.IsNil() {
 		value = reflect.ValueOf(value.Interface())
 	}
 
 	return value
 }
 
+// appendSlice appends rhs to lhs
+// function assumes lhsV and rhsV are slice or array
 func appendSlice(expr ast.Expr, lhsV reflect.Value, rhsV reflect.Value) (reflect.Value, error) {
 	lhsT := lhsV.Type().Elem()
 	rhsT := rhsV.Type().Elem()
@@ -285,29 +259,121 @@ func appendSlice(expr ast.Expr, lhsV reflect.Value, rhsV reflect.Value) (reflect
 	return nilValue, newStringError(expr, "invalid type conversion")
 }
 
-func getTypeFromString(env *Env, name string) (reflect.Type, error) {
-	env, typeString, err := getEnvFromString(env, name)
-	if err != nil {
-		return nilType, err
+func makeType(runInfo *runInfoStruct, typeStruct *ast.TypeStruct) reflect.Type {
+	switch typeStruct.Kind {
+	case ast.TypeDefault:
+		return getTypeFromEnv(runInfo, typeStruct)
+	case ast.TypePtr:
+		var t reflect.Type
+		if typeStruct.SubType != nil {
+			t = makeType(runInfo, typeStruct.SubType)
+		} else {
+			t = getTypeFromEnv(runInfo, typeStruct)
+		}
+		if runInfo.err != nil {
+			return nil
+		}
+		if t == nil {
+			return nil
+		}
+		return reflect.PtrTo(t)
+	case ast.TypeSlice:
+		var t reflect.Type
+		if typeStruct.SubType != nil {
+			t = makeType(runInfo, typeStruct.SubType)
+		} else {
+			t = getTypeFromEnv(runInfo, typeStruct)
+		}
+		if runInfo.err != nil {
+			return nil
+		}
+		if t == nil {
+			return nil
+		}
+		for i := 1; i < typeStruct.Dimensions; i++ {
+			t = reflect.SliceOf(t)
+		}
+		return reflect.SliceOf(t)
+	case ast.TypeMap:
+		key := makeType(runInfo, typeStruct.Key)
+		if runInfo.err != nil {
+			return nil
+		}
+		if key == nil {
+			return nil
+		}
+		t := makeType(runInfo, typeStruct.SubType)
+		if runInfo.err != nil {
+			return nil
+		}
+		if t == nil {
+			return nil
+		}
+		// capture panics if not in debug mode
+		defer func() {
+			if os.Getenv("ANKO_DEBUG") == "" {
+				if recoverResult := recover(); recoverResult != nil {
+					runInfo.err = fmt.Errorf("%v", recoverResult)
+					t = nil
+				}
+			}
+		}()
+		t = reflect.MapOf(key, t)
+		return t
+	case ast.TypeChan:
+		var t reflect.Type
+		if typeStruct.SubType != nil {
+			t = makeType(runInfo, typeStruct.SubType)
+		} else {
+			t = getTypeFromEnv(runInfo, typeStruct)
+		}
+		if runInfo.err != nil {
+			return nil
+		}
+		if t == nil {
+			return nil
+		}
+		return reflect.ChanOf(reflect.BothDir, t)
+	default:
+		runInfo.err = fmt.Errorf("unknown kind")
+		return nil
 	}
-	t, err := env.Type(typeString)
-	if err != nil {
-		return nilType, err
-	}
-	return t, nil
 }
 
-func getEnvFromString(env *Env, name string) (*Env, string, error) {
-	nameSplit := strings.SplitN(name, ".", 2)
-	for len(nameSplit) > 1 {
-		e, found := env.env[nameSplit[0]]
-		if !found {
-			return nil, "", fmt.Errorf("no namespace called: %v", nameSplit[0])
+func getTypeFromEnv(runInfo *runInfoStruct, typeStruct *ast.TypeStruct) reflect.Type {
+	env := runInfo.env
+
+	if len(typeStruct.Env) > 0 {
+		var e reflect.Value
+		var found bool
+		for {
+			// find starting env
+			e, found = env.env[typeStruct.Env[0]]
+			if found {
+				env = e.Interface().(*Env)
+				break
+			}
+			if env.parent == nil {
+				runInfo.err = fmt.Errorf("no namespace called: %v", typeStruct.Env[0])
+				return nil
+			}
+			env = env.parent
 		}
-		env = e.Interface().(*Env)
-		nameSplit = strings.SplitN(nameSplit[1], ".", 2)
+
+		for i := 1; i < len(typeStruct.Env); i++ {
+			// find child env
+			e, found = env.env[typeStruct.Env[i]]
+			if !found {
+				runInfo.err = fmt.Errorf("no namespace called: %v", typeStruct.Env[i])
+				return nil
+			}
+			env = e.Interface().(*Env)
+		}
 	}
-	return env, nameSplit[0], nil
+
+	var t reflect.Type
+	t, runInfo.err = env.Type(typeStruct.Name)
+	return t
 }
 
 func makeValue(t reflect.Type) (reflect.Value, error) {
@@ -328,9 +394,7 @@ func makeValue(t reflect.Type) (reflect.Value, error) {
 		if err != nil {
 			return nilValue, err
 		}
-		if !ptrV.Elem().CanSet() {
-			return nilValue, fmt.Errorf("type " + t.String() + " cannot be assigned")
-		}
+
 		ptrV.Elem().Set(v)
 		return ptrV, nil
 	case reflect.Slice:
@@ -355,4 +419,28 @@ func makeValue(t reflect.Type) (reflect.Value, error) {
 // If passed function, does extra checks otherwise just doing reflect.DeepEqual
 func ValueEqual(v1 interface{}, v2 interface{}) bool {
 	return corelib.ValueEqual(v1, v2)
+}
+
+// precedenceOfKinds returns the greater of two kinds
+// string > float > int
+func precedenceOfKinds(kind1 reflect.Kind, kind2 reflect.Kind) reflect.Kind {
+	if kind1 == kind2 {
+		return kind1
+	}
+	switch kind1 {
+	case reflect.String:
+		return kind1
+	case reflect.Float64, reflect.Float32:
+		switch kind2 {
+		case reflect.String:
+			return kind2
+		}
+		return kind1
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		switch kind2 {
+		case reflect.String, reflect.Float64, reflect.Float32:
+			return kind2
+		}
+	}
+	return kind1
 }

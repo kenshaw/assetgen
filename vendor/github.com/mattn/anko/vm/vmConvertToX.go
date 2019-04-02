@@ -1,6 +1,7 @@
 package vm
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 )
@@ -10,10 +11,6 @@ import (
 func reflectValueSlicetoInterfaceSlice(valueSlice []reflect.Value) reflect.Value {
 	interfaceSlice := make([]interface{}, 0, len(valueSlice))
 	for _, value := range valueSlice {
-		if !value.IsValid() {
-			interfaceSlice = append(interfaceSlice, nil)
-			continue
-		}
 		if value.Kind() == reflect.Interface && !value.IsNil() {
 			value = value.Elem()
 		}
@@ -27,18 +24,14 @@ func reflectValueSlicetoInterfaceSlice(valueSlice []reflect.Value) reflect.Value
 }
 
 // convertReflectValueToType trys to covert the reflect.Value to the reflect.Type
-// if it can not, it returns the orginal rv and an error
+// if it can not, it returns the original rv and an error
 func convertReflectValueToType(rv reflect.Value, rt reflect.Type) (reflect.Value, error) {
-	if !rv.IsValid() {
-		// if not valid return a valid reflect.Value of the reflect.Type
-		return makeValue(rt)
-	}
 	if rt == interfaceType || rv.Type() == rt {
 		// if reflect.Type is interface or the types match, return the provided reflect.Value
 		return rv, nil
 	}
 	if rv.Type().ConvertibleTo(rt) {
-		// if reflect can covert, do that convertion and return
+		// if reflect can covert, do that conversion and return
 		return rv.Convert(rt), nil
 	}
 	if (rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array) &&
@@ -53,7 +46,7 @@ func convertReflectValueToType(rv reflect.Value, rt reflect.Type) (reflect.Value
 			// convert map
 			return convertMap(rv, rt)
 		case reflect.Func:
-			// for runVMFunction convertions, call convertVMFunctionToType
+			// for runVMFunction conversions, call convertVMFunctionToType
 			return convertVMFunctionToType(rv, rt)
 		case reflect.Ptr:
 			// both rv and rt are pointers, convert what they are pointing to
@@ -102,10 +95,6 @@ func convertSliceOrArray(rv reflect.Value, rt reflect.Type) (reflect.Value, erro
 	var err error
 	var v reflect.Value
 	for i := 0; i < rv.Len(); i++ {
-		if !value.Index(i).CanSet() {
-			// is there a way for new slice/array not to be settable?
-			return rv, fmt.Errorf("invalid type conversion")
-		}
 		v, err = convertReflectValueToType(rv.Index(i), rtElemType)
 		if err != nil {
 			return rv, err
@@ -166,7 +155,10 @@ func convertVMFunctionToType(rv reflect.Value, rt reflect.Type) (reflect.Value, 
 		// only way to pass along any errors is by panic
 
 		// make the reflect.Value slice of each of the VM reflect.Value
-		args := make([]reflect.Value, 0, rt.NumIn())
+		args := make([]reflect.Value, 0, rt.NumIn()+1)
+		// for runVMFunction first arg is always context
+		// TOFIX: use normal context
+		args = append(args, reflect.ValueOf(context.Background()))
 		for i := 0; i < rt.NumIn(); i++ {
 			// have to do the double reflect.ValueOf that runVMFunction expects
 			args = append(args, reflect.ValueOf(in[i]))
@@ -199,9 +191,6 @@ func convertVMFunctionToType(rv reflect.Value, rt reflect.Type) (reflect.Value, 
 		// Go function wants more than one return value
 		// make sure we have a slice/array with enought values
 
-		if !rv.IsValid() {
-			panic(fmt.Sprintf("function wants %v return values but received invalid", rt.NumOut()))
-		}
 		if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
 			panic(fmt.Sprintf("function wants %v return values but received %v", rt.NumOut(), rv.Kind().String()))
 		}

@@ -9,7 +9,7 @@ github.com/gobwas/glob/syntax/ast
 github.com/gobwas/glob/util/runes
 github.com/gobwas/glob/syntax/lexer
 github.com/gobwas/glob/util/strings
-# github.com/mattn/anko v0.0.7
+# github.com/mattn/anko v0.1.2
 github.com/mattn/anko/vm
 github.com/mattn/anko/ast
 github.com/mattn/anko/internal/corelib
@@ -20,14 +20,14 @@ github.com/shurcooL/httpfs/vfsutil
 github.com/shurcooL/httpgzip
 # github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd => github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d
 github.com/shurcooL/vfsgen
-# github.com/spf13/afero v1.2.0
+# github.com/spf13/afero v1.2.2
 github.com/spf13/afero
 github.com/spf13/afero/mem
-# github.com/valyala/quicktemplate v1.0.0 => github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9
+# github.com/valyala/quicktemplate v0.0.0-00010101000000-000000000000 => github.com/kenshaw/quicktemplate v0.0.0-20181201010149-180468dad8e9
 github.com/valyala/quicktemplate/parser
 # github.com/yookoala/realpath v1.0.0
 github.com/yookoala/realpath
-# golang.org/x/crypto v0.0.0-20190103213133-ff983b9c42bc
+# golang.org/x/crypto v0.0.0-20190325154230-a5d413f7728c
 golang.org/x/crypto/openpgp
 golang.org/x/crypto/openpgp/armor
 golang.org/x/crypto/openpgp/errors
@@ -35,10 +35,10 @@ golang.org/x/crypto/openpgp/packet
 golang.org/x/crypto/openpgp/s2k
 golang.org/x/crypto/cast5
 golang.org/x/crypto/openpgp/elgamal
-# golang.org/x/net v0.0.0-20190110200230-915654e7eabc
+# golang.org/x/net v0.0.0-20190328230028-74de082e2cca
 golang.org/x/net/http/httpguts
 golang.org/x/net/idna
-# golang.org/x/sync v0.0.0-20181221193216-37e7f081c4d4
+# golang.org/x/sync v0.0.0-20190227155943-e225da77a7e6
 golang.org/x/sync/errgroup
 # golang.org/x/text v0.3.0
 golang.org/x/text/transform
