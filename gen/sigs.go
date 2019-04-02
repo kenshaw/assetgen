@@ -1549,6 +1549,8 @@ gWTU22h/IIhr2zHqVxgH6AMmARIvQ20=
 
 	// yarnKeyring is taken from https://dl.yarnpkg.com/debian/pubkey.gpg
 	yarnKeyring = `-----BEGIN PGP PUBLIC KEY BLOCK-----
+Version: GnuPG v1
+
 mQINBFf0j5oBEADS6cItqCbf4lOLICohq2aHqM5I1jsz3DC4ddIU5ONbKXP1t0wk
 FEUPRzd6m80cTo7Q02Bw7enh4J6HvM5XVBSSGKENP6XAsiOZnY9nkXlcQAPFRnCn
 CjEfoOPZ0cBKjn2IpIXXcC+7xh4p1yruBpOsCbT6BuzA+Nm9j4cpRjdRdWSSmdID
