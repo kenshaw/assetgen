@@ -35,7 +35,7 @@ func installNode(flags *Flags) (string, string, error) {
 	switch runtime.GOOS {
 	case "linux", "darwin":
 	case "windows":
-		platform, ext = "win", "zip"
+		platform, ext = "win", ".zip"
 	default:
 		return "", "", fmt.Errorf("unsupported os: %s", runtime.GOOS)
 	}
