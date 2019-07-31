@@ -6,15 +6,16 @@ require (
 	github.com/Masterminds/semver v1.4.2
 	github.com/gobwas/glob v0.2.3
 	github.com/mattn/anko v0.1.2
-	github.com/shurcooL/httpfs v0.0.0-20181222201310-74dc9339e414
-	github.com/shurcooL/httpgzip v0.0.0-20180522190206-b1c53ac65af9
+	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
+	github.com/shurcooL/httpgzip v0.0.0-20190516014818-1c7afaae1203
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/spf13/afero v1.2.2
-	github.com/valyala/quicktemplate v1.1.0
+	github.com/valyala/quicktemplate v1.1.1
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/crypto v0.0.0-20190418165655-df01cb2cc480
-	golang.org/x/net v0.0.0-20190420063019-afa5a82059c6 // indirect
-	golang.org/x/sync v0.0.0-20190412183630-56d357773e84
+	golang.org/x/crypto v0.0.0-20190701094942-4def268fd1a4
+	golang.org/x/net v0.0.0-20190724013045-ca1201d0de80 // indirect
+	golang.org/x/sync v0.0.0-20190423024810-112230192c58
+	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
 )
 
