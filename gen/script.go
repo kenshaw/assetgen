@@ -91,6 +91,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 		v interface{}
 	}{
 		{"staticDir", s.staticDir},
+		{"sassIncludeNodeModules", s.sassIncludeNodeModules},
 		{"sassInclude", s.sassInclude},
 		{"npmjs", s.npmjs},
 		{"js", s.js},
@@ -217,7 +218,13 @@ func (s *Script) staticDir(name string) {
 	})
 }
 
-// sassInclude adds a include path.
+// sassIncludeNodeModules adds the node modules path to the sass include search
+// path.
+func (s *Script) sassIncludeNodeModules() {
+	s.sassIncludes = append(s.sassIncludes, s.flags.NodeModules)
+}
+
+// sassInclude adds a include path for a node module.
 func (s *Script) sassInclude(name string, paths ...string) {
 	var ver string
 	if i := strings.Index(name, "@"); i != -1 {
