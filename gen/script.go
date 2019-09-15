@@ -737,7 +737,7 @@ func (s *Script) ConfigDeps() error {
 	}
 
 	// build params
-	params := []string{"add", "--no-progress", "--silent"}
+	params := []string{"add", "--no-progress", "--silent", "--no-bin-links", "--modules-folder=" + s.flags.NodeModules}
 	var add bool
 	for _, d := range s.nodeDeps {
 		if _, ok := v.Deps[d.name]; ok {
