@@ -14,11 +14,6 @@ import (
 func setupFiles(flags *Flags) error {
 	var err error
 
-	// build relative node path
-	nodepath, err := filepath.Rel(flags.Wd, flags.NodeModules)
-	if err != nil || !isParentDir(flags.Wd, flags.NodeModules) {
-		return errors.New("node path must be subdirectory of working directory")
-	}
 	app := filepath.Base(flags.Wd)
 
 	// build relative cache paths
@@ -32,7 +27,6 @@ func setupFiles(flags *Flags) error {
 
 	// create files if not present
 	for _, d := range []struct{ path, contents string }{
-		{filepath.Join(flags.Wd, yarnRcName), tplf("yarnrc", nodepath)},
 		{filepath.Join(flags.Wd, "package.json"), tplf("package.json", app, app+" app", cacheList)},
 		{filepath.Join(flags.Assets, ".gitignore"), tplf("gitignore")},
 		{filepath.Join(flags.Assets, scriptName), tplf("assets.anko")},

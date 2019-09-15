@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	nodeConstraint = ">=10.15.x"
-	yarnConstraint = ">=1.12.x"
-
-	yarnRcName = ".yarnrc"
+	nodeConstraint = ">=10.16.x"
+	yarnConstraint = ">=1.17.x"
 
 	cacheDir          = ".cache"
 	buildDir          = "build"
@@ -213,7 +211,7 @@ func checkSetup(flags *Flags) error {
 
 	// check dirs node_modules + node_modules/.bin
 	if err = checkDirs(flags, &flags.NodeModules, &flags.NodeModulesBin); err != nil {
-		return fmt.Errorf("unable to fix node_modules node_modules/.bin: %v", err)
+		return fmt.Errorf("unable to fix node_modules and node_modules/.bin: %v", err)
 	}
 
 	// setup files
@@ -223,14 +221,13 @@ func checkSetup(flags *Flags) error {
 
 	// do pure lockfile install
 	if !nodeModulesPresent && yarnLockPresent {
-		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile"); err != nil {
+		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
 			return errors.New("unable to install locked deps: please fix manually")
 		}
 	}
 
 	// ensure node_modules and assets directories exist
 	for _, d := range []struct{ n, v string }{
-		{"node_modules", flags.NodeModules},
 		{"assets", flags.Assets},
 	} {
 		_, err := filepath.Rel(flags.Wd, d.v)
@@ -240,7 +237,7 @@ func checkSetup(flags *Flags) error {
 	}
 
 	// run yarn install
-	if err = runSilent(flags, flags.YarnBin, "install"); err != nil {
+	if err = runSilent(flags, flags.YarnBin, "install", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
 		return errors.New("yarn is out of sync: please fix manually")
 	}
 
