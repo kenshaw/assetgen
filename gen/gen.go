@@ -241,6 +241,17 @@ func checkSetup(flags *Flags) error {
 		return errors.New("yarn is out of sync: please fix manually")
 	}
 
+	// run yarn upgrade
+	if flags.YarnUpgrade {
+		params := []string{"upgrade", "--no-bin-links", "--modules-folder=" + flags.NodeModules}
+		if flags.YarnLatest {
+			params = append(params, "--latest")
+		}
+		if err = runSilent(flags, flags.YarnBin, params...); err != nil {
+			return fmt.Errorf("unable to run yarn upgrade: %v", err)
+		}
+	}
+
 	return nil
 }
 

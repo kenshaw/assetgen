@@ -24,6 +24,9 @@ type Flags struct {
 	NodeModules    string
 	NodeModulesBin string
 
+	YarnUpgrade bool
+	YarnLatest  bool
+
 	Assets string
 	Script string
 
@@ -59,6 +62,9 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 
 	fs.StringVar(&f.Assets, "assets", "", "assets path")
 	fs.StringVar(&f.Script, "script", "", "script file")
+
+	fs.BoolVar(&f.YarnUpgrade, "upgrade", false, "toggle upgrade")
+	fs.BoolVar(&f.YarnLatest, "latest", false, "toggle latest on upgrade")
 
 	fs.StringVar(&f.ManifestName, "manifest-name", "%s[:4]%s[:4]%s", "manifest name")
 
