@@ -17,6 +17,7 @@ require (
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
+	golang.org/x/xerrors v0.0.0-20190717185122-a985d3407aa7
 )
 
 replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d

@@ -1,13 +1,14 @@
 package gen
 
 import (
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/xerrors"
 )
 
 // setupFiles creates default files when they do not already exist.
@@ -33,7 +34,7 @@ func setupFiles(flags *Flags) error {
 	} {
 		err = writeCond(d.path, d.contents)
 		if err != nil {
-			return fmt.Errorf("unable to setup %s: %v", d.path, err)
+			return xerrors.Errorf("unable to setup %s: %w", d.path, err)
 		}
 	}
 
@@ -93,7 +94,7 @@ func writeCond(path, contents string) error {
 	case err != nil:
 		return err
 	case fi.IsDir():
-		return errors.New("must not be a directory")
+		return xerrors.New("must not be a directory")
 	}
 	return nil
 }

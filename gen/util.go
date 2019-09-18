@@ -25,6 +25,7 @@ import (
 	"github.com/Masterminds/semver"
 	"github.com/shurcooL/httpfs/vfsutil"
 	"github.com/shurcooL/httpgzip"
+	"golang.org/x/xerrors"
 )
 
 // infof handles logging information.
@@ -90,7 +91,7 @@ func runCombined(flags *Flags, name string, params ...string) (string, error) {
 func compareSemver(version, constraint string) bool {
 	c, err := semver.NewConstraint(constraint)
 	if err != nil {
-		panic(fmt.Sprintf("invalid constraint %q: %v", constraint, err))
+		panic(fmt.Sprintf("invalid constraint %q: %w", constraint, err))
 	}
 	return c.Check(semver.MustParse(version))
 }
@@ -385,7 +386,7 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return nil, fmt.Errorf("could not retrieve %q (%d)", urlstr, res.StatusCode)
+		return nil, xerrors.Errorf("could not retrieve %q (%d)", urlstr, res.StatusCode)
 	}
 
 	buf, err := ioutil.ReadAll(res.Body)
@@ -422,7 +423,7 @@ func extractArchive(dir string, buf []byte, ext string, chop string) error {
 	case ".tar.gz":
 		return extractTarGz(dir, buf, chop)
 	}
-	return fmt.Errorf("invalid archive type %q", ext)
+	return xerrors.Errorf("invalid archive type %q", ext)
 }
 
 // extractZip extracts buf to dir.
@@ -510,14 +511,14 @@ loop:
 			// check that symlink is contained in dir and link
 			p := filepath.Clean(filepath.Join(filepath.Dir(n), h.Linkname))
 			if _, err = filepath.Rel(dir, p); err != nil {
-				return fmt.Errorf("could not make tar symlink %q relative to %s", h.Linkname, dir)
+				return xerrors.Errorf("could not make tar symlink %q relative to %s", h.Linkname, dir)
 			}
 			if err = os.Symlink(p, n); err != nil {
-				return fmt.Errorf("could not create symlink for %q: %v", n, err)
+				return xerrors.Errorf("could not create symlink for %q: %w", n, err)
 			}
 
 		default:
-			return fmt.Errorf("unsupported file type in tar: %v", h.Typeflag)
+			return xerrors.Errorf("unsupported file type in tar: %v", h.Typeflag)
 		}
 	}
 	return nil

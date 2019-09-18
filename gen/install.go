@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"github.com/Masterminds/semver"
 	"github.com/brankas/assetgen/pack"
 	"golang.org/x/crypto/openpgp"
+	"golang.org/x/xerrors"
 )
 
 // installNode installs node to the cache directory.
@@ -37,7 +37,7 @@ func installNode(flags *Flags) (string, string, error) {
 	case "windows":
 		platform, ext = "win", ".zip"
 	default:
-		return "", "", fmt.Errorf("unsupported os: %s", runtime.GOOS)
+		return "", "", xerrors.Errorf("unsupported os: %s", runtime.GOOS)
 	}
 	platform += "-x64"
 
@@ -53,27 +53,27 @@ func installNode(flags *Flags) (string, string, error) {
 	switch {
 	case os.IsNotExist(err):
 	case err != nil:
-		return "", "", fmt.Errorf("could not stat %q: %v", binPath, err)
+		return "", "", xerrors.Errorf("could not stat %q: %w", binPath, err)
 	case fi.IsDir():
-		return "", "", fmt.Errorf("%q is in invalid state: manually remove to try again", nodePath)
+		return "", "", xerrors.Errorf("%q is in invalid state: manually remove to try again", nodePath)
 	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
 		return nodePath, binPath, nil
 	}
 
 	// remove existing directory
 	if err = os.RemoveAll(nodePath); err != nil {
-		return "", "", fmt.Errorf("could not remove %q: %v", nodePath, err)
+		return "", "", xerrors.Errorf("could not remove %q: %w", nodePath, err)
 	}
 
 	// retrieve archive
 	buf, err := getNodeAndVerify(flags, v, platform, ext)
 	if err != nil {
-		return "", "", fmt.Errorf("could not retrieve node %s (%s): %v", v, platform, err)
+		return "", "", xerrors.Errorf("could not retrieve node %s (%s): %w", v, platform, err)
 	}
 
 	// extract archive
 	if err = extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
-		return "", "", fmt.Errorf("unable to extract node %s (%s): %v", v, platform, err)
+		return "", "", xerrors.Errorf("unable to extract node %s (%s): %w", v, platform, err)
 	}
 
 	return nodePath, binPath, nil
@@ -103,16 +103,16 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 	// load available node versions
 	verBuf, err := getAndCache(flags, nodeDistURL+"/index.json", flags.Ttl, false, "node", "versions.json")
 	if err != nil {
-		return "", fmt.Errorf("could not retrieve available node versions: %v", err)
+		return "", xerrors.Errorf("could not retrieve available node versions: %w", err)
 	}
 
 	// parse node versions
 	var nodeVersions []nodeVersion
 	if err = json.Unmarshal(verBuf, &nodeVersions); err != nil {
-		return "", fmt.Errorf("node versions.json is invalid: %v", err)
+		return "", xerrors.Errorf("node versions.json is invalid: %w", err)
 	}
 	if len(nodeVersions) < 1 {
-		return "", errors.New("node versions.json missing a defined version")
+		return "", xerrors.New("node versions.json missing a defined version")
 	}
 
 	// sort node versions
@@ -120,7 +120,7 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 	for i, nv := range nodeVersions {
 		v, err := semver.NewVersion(nv.Version)
 		if err != nil {
-			return "", fmt.Errorf("invalid node version %q: %v", nv.Version, err)
+			return "", xerrors.Errorf("invalid node version %q: %w", nv.Version, err)
 		}
 		vers[v.String()], vs[i] = nv, v
 	}
@@ -133,7 +133,7 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 		}
 	}
 
-	return "", errors.New("could not find a lts node version")
+	return "", xerrors.New("could not find a lts node version")
 }
 
 // getNodeAndVerify retrieves the node.js binary distribution for the specified
@@ -160,7 +160,7 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	}
 	_, err = openpgp.CheckDetachedSignature(kr, bytes.NewReader(txt), bytes.NewReader(sig))
 	if err != nil {
-		return nil, fmt.Errorf("could not verify signature: %v", err)
+		return nil, xerrors.Errorf("could not verify signature: %w", err)
 	}
 
 	// get node
@@ -177,16 +177,16 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	for scanner.Scan() {
 		line := strings.Split(scanner.Text(), "  ")
 		if len(line) != 2 {
-			return nil, errors.New("SHASUMS256.txt is invalid")
+			return nil, xerrors.New("SHASUMS256.txt is invalid")
 		}
 		found = found || (line[0] == hash && line[1] == fn)
 	}
 	if err = scanner.Err(); err != nil {
-		return nil, fmt.Errorf("could not read SHASUMS256.txt: %v", err)
+		return nil, xerrors.Errorf("could not read SHASUMS256.txt: %w", err)
 	}
 
 	if !found {
-		return nil, fmt.Errorf("could not find signature in SHASUMS256.txt for %s", fn)
+		return nil, xerrors.Errorf("could not find signature in SHASUMS256.txt for %s", fn)
 	}
 
 	return buf, nil
@@ -211,32 +211,32 @@ func installYarn(flags *Flags) (string, string, error) {
 	switch {
 	case os.IsNotExist(err):
 	case err != nil:
-		return "", "", fmt.Errorf("could not stat %q: %v", binPath, err)
+		return "", "", xerrors.Errorf("could not stat %q: %w", binPath, err)
 	case fi.IsDir():
-		return "", "", fmt.Errorf("%q is in invalid state: manually remove to try again", yarnPath)
+		return "", "", xerrors.Errorf("%q is in invalid state: manually remove to try again", yarnPath)
 	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
 		return yarnPath, binPath, nil
 	}
 
 	// remove existing directory
 	if err = os.RemoveAll(yarnPath); err != nil {
-		return "", "", fmt.Errorf("could not remove %q: %v", yarnPath, err)
+		return "", "", xerrors.Errorf("could not remove %q: %w", yarnPath, err)
 	}
 
 	// retrieve archive
 	buf, err := getYarnAndVerify(flags, v, assets)
 	if err != nil {
-		return "", "", fmt.Errorf("could not retrieve yarn %s: %v", v, err)
+		return "", "", xerrors.Errorf("could not retrieve yarn %s: %w", v, err)
 	}
 
 	// create dir
 	if err = os.MkdirAll(yarnPath, 0755); err != nil {
-		return "", "", fmt.Errorf("could not create yarn %s directory: %v", v, err)
+		return "", "", xerrors.Errorf("could not create yarn %s directory: %w", v, err)
 	}
 
 	// extract archive
 	if err = extractTarGz(yarnPath, buf, fmt.Sprintf("yarn-%s", v)); err != nil {
-		return "", "", fmt.Errorf("unable to extract yarn %s: %v", v, err)
+		return "", "", xerrors.Errorf("unable to extract yarn %s: %w", v, err)
 	}
 
 	return yarnPath, binPath, nil
@@ -275,7 +275,7 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 	}
 	_, err = openpgp.CheckArmoredDetachedSignature(kr, bytes.NewReader(buf), bytes.NewReader(asc))
 	if err != nil {
-		return nil, fmt.Errorf("could not verify signature: %v", err)
+		return nil, xerrors.Errorf("could not verify signature: %w", err)
 	}
 
 	return buf, nil
@@ -292,7 +292,7 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 
 	// check release name
 	if !strings.HasPrefix(v, "Release ") {
-		return fmt.Errorf("invalid fontawesome release %q", v)
+		return xerrors.Errorf("invalid fontawesome release %q", v)
 	}
 	v = strings.TrimPrefix(v, "Release ")
 
@@ -308,7 +308,7 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 		}
 	}
 	if !found {
-		return fmt.Errorf("could not find fontawesome asset %s for release %s", fn, v)
+		return xerrors.Errorf("could not find fontawesome asset %s for release %s", fn, v)
 	}
 
 	// retrieve release
@@ -320,10 +320,10 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 	// remove and create build/fontawesome
 	dir := filepath.Join(flags.Build, "fontawesome")
 	if err = os.RemoveAll(dir); err != nil {
-		return fmt.Errorf("could not remove fontawesome build directory: %v", err)
+		return xerrors.Errorf("could not remove fontawesome build directory: %w", err)
 	}
 	if err = os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("could not create fontawesome build directory: %v", err)
+		return xerrors.Errorf("could not create fontawesome build directory: %w", err)
 	}
 
 	r, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
@@ -353,7 +353,7 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 
 			out := filepath.Join(dir, bn)
 			if err = ioutil.WriteFile(out, sbuf, 0644); err != nil {
-				return fmt.Errorf("could not write fontawesome file %s: %v", out, err)
+				return xerrors.Errorf("could not write fontawesome file %s: %w", out, err)
 			}
 			if err = fr.Close(); err != nil {
 				return err
