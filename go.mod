@@ -12,8 +12,8 @@ require (
 	github.com/spf13/afero v1.2.2
 	github.com/valyala/quicktemplate v1.2.0
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/crypto v0.0.0-20190911031432-227b76d455e7
-	golang.org/x/net v0.0.0-20190912160710-24e19bdeb0f2 // indirect
+	golang.org/x/crypto v0.0.0-20190926180335-cea2066c6411
+	golang.org/x/net v0.0.0-20190926025831-c00fd9afed17 // indirect
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
