@@ -10,10 +10,10 @@ require (
 	github.com/shurcooL/httpgzip v0.0.0-20190720172056-320755c1c1b0
 	github.com/shurcooL/vfsgen v0.0.0-20181202132449-6a9ea43bcacd
 	github.com/spf13/afero v1.2.2
-	github.com/valyala/quicktemplate v1.3.1
+	github.com/valyala/quicktemplate v1.4.1
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
-	golang.org/x/net v0.0.0-20191014212845-da9a3fd4c582 // indirect
+	golang.org/x/crypto v0.0.0-20191128160524-b544559bb6d1
+	golang.org/x/net v0.0.0-20191126235420-ef20fe5d7933 // indirect
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
