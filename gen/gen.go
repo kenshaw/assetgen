@@ -40,7 +40,7 @@ const (
 
 	nodeDistURL = "https://nodejs.org/dist"
 
-	geoipURL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%s"
+	geoipURL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&suffix=tar.gz&license_key=%s"
 )
 
 // Run generates assets using the current working directory and default flags.

@@ -1,10 +1,13 @@
 package gen
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -146,17 +149,57 @@ func (s *Script) get(src string) ([]byte, error) {
 	return ioutil.ReadAll(res.Body)
 }
 
-// getAndPack retrieves src and writes it to the dest file.
-func (s *Script) getAndPack(dest, src, name string) error {
+// getAndRepackGeoip retrieves src, unpacks the downloaded data, and
+// repacks/writes it to dest as the passed variable name.
+func (s *Script) getAndRepackGeoip(dest, name string) error {
+	src := fmt.Sprintf(geoipURL, s.flags.MaxMindLicense)
+
 	s.logf("GET %s => %s", src, dest)
 	buf, err := s.get(src)
 	if err != nil {
 		return err
 	}
 
+	// decompress
+	gz, err := gzip.NewReader(bytes.NewReader(buf))
+	if err != nil {
+		return err
+	}
+	r := tar.NewReader(gz)
+
+	// storage
+	b := new(bytes.Buffer)
+	w := gzip.NewWriter(b)
+
+loop:
+	// process tar
+	for {
+		h, err := r.Next()
+		switch {
+		case err == io.EOF:
+			break loop
+		case err != nil:
+			return err
+		}
+		if !strings.HasSuffix(h.Name, ".mmdb") {
+			continue
+		}
+		if _, err = io.Copy(w, r); err != nil {
+			return err
+		}
+	}
+
+	// close
+	if err = w.Flush(); err != nil {
+		return err
+	}
+	if err = w.Close(); err != nil {
+		return err
+	}
+
 	// write packed data
 	p := pack.New()
-	p.AddBytes(filepath.Base(src), buf)
+	p.AddBytes("GeoLite2-Country.mmdb.gz", b.Bytes())
 	return p.WriteTo(dest, name)
 }
 
@@ -364,24 +407,28 @@ func (s *Script) addGeoip(_, dir string) {
 		}
 
 		// check that maxmind license is defined if the file doesn't exist
-		if err != nil && os.IsNotExist(err) {
+		if err != nil && os.IsNotExist(err) && s.flags.MaxMindLicense == "" {
 			return xerrors.Errorf("flag -maxMindLicense not provided: unable to generate %s", path)
 		}
 
+		isExpired := true
+		if err == nil {
+			isExpired = time.Now().After(fi.ModTime().Add(s.flags.Ttl))
+		}
+
 		// bail if data isn't stale
-		isExpired := time.Now().After(fi.ModTime().Add(s.flags.Ttl))
 		if err == nil && s.flags.Ttl != 0 && !isExpired {
 			return nil
 		}
 
-		// bail if no license defined but
+		// bail if no license defined but is expired
 		if isExpired && s.flags.MaxMindLicense == "" {
 			warnf(s.flags, "flag -maxMindLicense was not provided and geoip database is stale, skipping generation for %s", path)
 			return nil
 		}
 
-		// download and cache
-		return s.getAndPack(path, fmt.Sprintf(geoipURL, s.flags.MaxMindLicense), "Geoip")
+		// download, repack and add to cache
+		return s.getAndRepackGeoip(path, "Geoip")
 	})
 }
 
