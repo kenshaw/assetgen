@@ -12,6 +12,8 @@ type Flags struct {
 
 	Verbose bool
 
+	MaxMindLicense string
+
 	Node    string
 	NodeBin string
 
@@ -51,6 +53,7 @@ func (f *Flags) FlagSet(name string, errorHandling flag.ErrorHandling) *flag.Fla
 	fs := flag.NewFlagSet(name, errorHandling)
 
 	fs.BoolVar(&f.Verbose, "v", true, "toggle verbose")
+	fs.StringVar(&f.MaxMindLicense, "maxMindLicense", "", "maxmind license_key for geoip databases")
 	fs.StringVar(&f.Node, "node", "", "path to node executable")
 	fs.StringVar(&f.Yarn, "yarn", "", "path to yarn executable")
 

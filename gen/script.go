@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/gobwas/glob"
+	"github.com/mattn/anko/env"
 	"github.com/mattn/anko/vm"
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"github.com/yookoala/realpath"
@@ -82,7 +83,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	}
 
 	// create scripting runtime
-	a := vm.NewEnv()
+	a := env.NewEnv()
 
 	// define vals
 	for _, z := range []struct {
@@ -101,7 +102,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	}
 
 	// execute
-	_, err = a.Execute(string(buf))
+	_, err = vm.Execute(a, nil, string(buf))
 	if err != nil {
 		return nil, xerrors.Errorf("unable to execute script %s: %w", flags.Script, err)
 	}
@@ -362,13 +363,25 @@ func (s *Script) addGeoip(_, dir string) {
 			return xerrors.Errorf("could not stat %s: %w", path, err)
 		}
 
+		// check that maxmind license is defined if the file doesn't exist
+		if err != nil && os.IsNotExist(err) {
+			return xerrors.Errorf("flag -maxMindLicense not provided: unable to generate %s", path)
+		}
+
 		// bail if data isn't stale
-		if err == nil && s.flags.Ttl != 0 && !time.Now().After(fi.ModTime().Add(s.flags.Ttl)) {
+		isExpired := time.Now().After(fi.ModTime().Add(s.flags.Ttl))
+		if err == nil && s.flags.Ttl != 0 && !isExpired {
+			return nil
+		}
+
+		// bail if no license defined but
+		if isExpired && s.flags.MaxMindLicense == "" {
+			warnf(s.flags, "flag -maxMindLicense was not provided and geoip database is stale, skipping generation for %s", path)
 			return nil
 		}
 
 		// download and cache
-		return s.getAndPack(path, geoipURL, "Geoip")
+		return s.getAndPack(path, fmt.Sprintf(geoipURL, s.flags.MaxMindLicense), "Geoip")
 	})
 }
 
