@@ -91,7 +91,11 @@ func Assetgen(flags *Flags) error {
 
 	// ensure paths are set
 	if flags.Cache == "" {
-		flags.Cache = filepath.Join(flags.Wd, cacheDir)
+		if dir := os.Getenv("ASSETGEN_CACHE"); dir != "" {
+			flags.Cache = dir
+		} else {
+			flags.Cache = filepath.Join(flags.Wd, cacheDir)
+		}
 	}
 	if flags.Build == "" {
 		flags.Build = filepath.Join(flags.Wd, buildDir)
