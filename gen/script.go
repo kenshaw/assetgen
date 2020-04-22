@@ -570,6 +570,7 @@ func (s *Script) addSass(_, dir string) {
 	for _, n := range []string{
 		"node-sass",
 		"postcss-cli",
+		"tailwindcss",
 		"autoprefixer",
 		"clean-css-cli",
 		"deasync",
@@ -653,7 +654,7 @@ func (s *Script) addSass(_, dir string) {
 			err = runSilent(
 				s.flags,
 				"postcss",
-				"--use=autoprefixer",
+				"--use", "tailwindcss", "autoprefixer",
 				"--map",
 				"--output="+filepath.Join(s.flags.Build, cssDir, fn+".postcss.css"),
 				filepath.Join(s.flags.Build, cssDir, fn+".css"),
