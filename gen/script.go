@@ -679,8 +679,9 @@ func (s *Script) addSass(_, dir string) {
 			err = runSilent(
 				s.flags,
 				"cleancss",
+				"-O1", "specialComments:0",
 				"-O2",
-				"--format=specialComments:0;processImport:0",
+				"--inline", "all",
 				"--source-map",
 				"--skip-rebase",
 				"--output="+cleanCss,
