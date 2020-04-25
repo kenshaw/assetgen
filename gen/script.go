@@ -562,6 +562,9 @@ func (s *Script) optimizeImage(out, in string) error {
 	return runSilent(s.flags, "imagemin", plugin, "--out-dir="+filepath.Dir(out), in)
 }
 
+// stripCssCommentsRE is a regexp to match css comments.
+var stripCssCommentsRE = regexp.MustCompile(`/\*!.+\*/`)
+
 // addSass configures a script step for compiling and minifying sass assets.
 //
 // This walks the sass directory, and if there's any .scss files, generates the
@@ -569,8 +572,10 @@ func (s *Script) optimizeImage(out, in string) error {
 func (s *Script) addSass(_, dir string) {
 	for _, n := range []string{
 		"node-sass",
+		"tailwindcss",
 		"postcss-cli",
 		"autoprefixer",
+		"@fullhuman/postcss-purgecss",
 		"clean-css-cli",
 		"deasync",
 	} {
@@ -585,10 +590,14 @@ func (s *Script) addSass(_, dir string) {
 			return xerrors.Errorf("could not create assetgen directory: %w", err)
 		}
 
-		// write sass.js and _assetgen.scss to build dir
+		// write sass.js, postcss.config.js, and _assetgen.scss to build dir
 		err = ioutil.WriteFile(filepath.Join(s.flags.Build, sassJs), []byte(tplf(sassJs)), 0644)
 		if err != nil {
 			return xerrors.Errorf("could not write %s: %w", sassJs, err)
+		}
+		err = ioutil.WriteFile(filepath.Join(s.flags.Build, postcssJs), []byte(tplf(postcssJs, filepath.Join(s.flags.Assets, templatesDir))), 0644)
+		if err != nil {
+			return xerrors.Errorf("could not write %s: %w", postcssJs, err)
 		}
 		err = ioutil.WriteFile(filepath.Join(s.flags.Build, "assetgen", assetgenScss), []byte(tplf(assetgenScss)), 0644)
 		if err != nil {
@@ -649,13 +658,17 @@ func (s *Script) addSass(_, dir string) {
 				return xerrors.Errorf("could not run node-sass: %w", err)
 			}
 
-			// autoprefixer
+			postCss := filepath.Join(s.flags.Build, cssDir, fn+".postcss.css")
+			cleanCss := filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css")
+			finalCss := filepath.Join(s.flags.Build, cssDir, fn+".final.css")
+
+			// postcss
 			err = runSilent(
 				s.flags,
 				"postcss",
-				"--use=autoprefixer",
+				"--config="+filepath.Join(s.flags.Build, postcssJs),
 				"--map",
-				"--output="+filepath.Join(s.flags.Build, cssDir, fn+".postcss.css"),
+				"--output="+postCss,
 				filepath.Join(s.flags.Build, cssDir, fn+".css"),
 			)
 			if err != nil {
@@ -667,17 +680,30 @@ func (s *Script) addSass(_, dir string) {
 				s.flags,
 				"cleancss",
 				"-O2",
-				"--format='specialComments:0;processImport:0'",
+				"--format=specialComments:0;processImport:0",
 				"--source-map",
 				"--skip-rebase",
-				"--output="+filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css"),
-				filepath.Join(s.flags.Build, cssDir, fn+".postcss.css"),
+				"--output="+cleanCss,
+				postCss,
 			)
 			if err != nil {
 				return xerrors.Errorf("could not run cleancss: %w", err)
 			}
 
-			return s.dist.AddFile(cssDir+"/"+fn+".css", filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css"))
+			// strip annoying comments
+			buf, err := ioutil.ReadFile(cleanCss)
+			if err != nil {
+				return xerrors.Errorf("could not read cleancss: %w", err)
+			}
+
+			// write final css
+			buf = stripCssCommentsRE.ReplaceAll(buf, nil)
+			err = ioutil.WriteFile(finalCss, buf, 0644)
+			if err != nil {
+				return xerrors.Errorf("could not write final css: %w", err)
+			}
+
+			return s.dist.AddFile(cssDir+"/"+fn+".css", finalCss)
 		})
 	})
 }

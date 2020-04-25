@@ -1,12 +1,8 @@
 #!/bin/bash
 
-VERSION=1.14.1
+VERSION=1.14.2
 
 set -ex
 
-docker build \
-  -t registry.brankas.dev/assetgen/builder:$VERSION \
-  -f Dockerfile.builder \
-  .
-
-docker push registry.brankas.dev/assetgen/builder:$VERSION
+docker build -t quay.io/brankas/assetgen:$VERSION .
+docker push quay.io/brankas/assetgen:$VERSION
