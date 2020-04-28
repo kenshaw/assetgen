@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/ioutil"
 	"log"
@@ -12,8 +13,6 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
-
-	"golang.org/x/xerrors"
 )
 
 // IpcCallbackMap is a map of IPC callback handlers.
@@ -155,15 +154,15 @@ func (s *IpcServer) handle(ctxt context.Context, conn net.Conn) error {
 func (s *IpcServer) doCall(v IpcMsg) (interface{}, error) {
 	name, ok := v.Params["name"].(string)
 	if !ok {
-		return nil, xerrors.New("missing name in call")
+		return nil, errors.New("missing name in call")
 	}
 	args, ok := v.Params["args"].([]interface{})
 	if !ok {
-		return nil, xerrors.New("missing args in call")
+		return nil, errors.New("missing args in call")
 	}
 	f, ok := s.m[name]
 	if !ok {
-		return nil, xerrors.New("invalid func name")
+		return nil, errors.New("invalid func name")
 	}
 	return f(args...)
 }

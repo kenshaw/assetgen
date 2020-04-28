@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -24,7 +25,6 @@ import (
 	qtcparser "github.com/valyala/quicktemplate/parser"
 	"github.com/yookoala/realpath"
 	"golang.org/x/sync/errgroup"
-	"golang.org/x/xerrors"
 
 	"github.com/brankas/assetgen/pack"
 )
@@ -75,7 +75,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 	// load
 	buf, err := ioutil.ReadFile(flags.Script)
 	if err != nil {
-		return nil, xerrors.Errorf("unable to load script %s: %w", flags.Script, err)
+		return nil, fmt.Errorf("unable to load script %s: %w", flags.Script, err)
 	}
 
 	// create
@@ -100,14 +100,14 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"js", s.js},
 	} {
 		if err = a.Define(z.n, z.v); err != nil {
-			return nil, xerrors.Errorf("unable to define %s: %w", z.n, err)
+			return nil, fmt.Errorf("unable to define %s: %w", z.n, err)
 		}
 	}
 
 	// execute
 	_, err = vm.Execute(a, nil, string(buf))
 	if err != nil {
-		return nil, xerrors.Errorf("unable to execute script %s: %w", flags.Script, err)
+		return nil, fmt.Errorf("unable to execute script %s: %w", flags.Script, err)
 	}
 
 	// add directory handling steps
@@ -129,9 +129,9 @@ func LoadScript(flags *Flags) (*Script, error) {
 		case err != nil && os.IsNotExist(err):
 			continue
 		case err != nil:
-			return nil, xerrors.Errorf("could not stat %s: %w", dir, err)
+			return nil, fmt.Errorf("could not stat %s: %w", dir, err)
 		case !fi.IsDir():
-			return nil, xerrors.Errorf("path %s must be a directory", dir)
+			return nil, fmt.Errorf("path %s must be a directory", dir)
 		}
 		d.f(d.n, dir)
 	}
@@ -143,7 +143,7 @@ func LoadScript(flags *Flags) (*Script, error) {
 func (s *Script) get(src string) ([]byte, error) {
 	res, err := http.Get(src)
 	if err != nil {
-		return nil, xerrors.Errorf("could not retrieve %q: %w", src, err)
+		return nil, fmt.Errorf("could not retrieve %q: %w", src, err)
 	}
 	defer res.Body.Close()
 	return ioutil.ReadAll(res.Body)
@@ -232,16 +232,16 @@ var staticDirNameRE = regexp.MustCompile("^[A-Za-z0-9]+$")
 func (s *Script) staticDir(name string) {
 	s.exec = append(s.exec, func() error {
 		if !staticDirNameRE.MatchString(name) {
-			return xerrors.Errorf("invalid static dir name %q", name)
+			return fmt.Errorf("invalid static dir name %q", name)
 		}
 
 		dir := filepath.Join(s.flags.Assets, name)
 		fi, err := os.Stat(dir)
 		switch {
 		case err != nil:
-			return xerrors.Errorf("could not open static dir %q", dir)
+			return fmt.Errorf("could not open static dir %q", dir)
 		case !fi.IsDir():
-			return xerrors.Errorf("%q is not a directory", dir)
+			return fmt.Errorf("%q is not a directory", dir)
 		}
 
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -254,7 +254,7 @@ func (s *Script) staticDir(name string) {
 
 			p, err := filepath.Rel(s.flags.Assets, n)
 			if err != nil {
-				return xerrors.Errorf("%q not located within the project: %w", fi.Name(), err)
+				return fmt.Errorf("%q not located within the project: %w", fi.Name(), err)
 			}
 			return s.dist.AddFile(p, n)
 		})
@@ -304,7 +304,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 		var err error
 
 		if len(v) < 1 {
-			return xerrors.New("js() must be passed at least one arg")
+			return errors.New("js() must be passed at least one arg")
 		}
 
 		// process node deps
@@ -315,7 +315,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 				n := filepath.Join(s.flags.Assets, jsDir, d)
 				_, err := os.Stat(n)
 				if err != nil {
-					return xerrors.Errorf("could not find js %q", d)
+					return fmt.Errorf("could not find js %q", d)
 				}
 				scripts[i] = jsdep{path: n}
 
@@ -327,7 +327,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 				scripts[i] = jsdep{name: d.name, path: p}
 
 			default:
-				return xerrors.Errorf("unknown type passed to js(): %T", v[i])
+				return fmt.Errorf("unknown type passed to js(): %T", v[i])
 			}
 		}
 
@@ -335,37 +335,37 @@ func (s *Script) js(fn string, v ...interface{}) {
 		for i := 0; i < len(scripts); i++ {
 			scripts[i].path, err = filepath.Rel(s.flags.Wd, scripts[i].path)
 			if err != nil {
-				return xerrors.Errorf("js cannot be outside of project")
+				return fmt.Errorf("js cannot be outside of project")
 			}
 		}
 
 		// ensure directory exists
 		dir := filepath.Join(s.flags.Build, jsDir)
 		if err = os.MkdirAll(dir, 0755); err != nil {
-			return xerrors.Errorf("could not create js dir: %w", err)
+			return fmt.Errorf("could not create js dir: %w", err)
 		}
 
 		// open out file
 		outfile := filepath.Join(dir, fn)
 		f, err := os.Create(outfile)
 		if err != nil {
-			return xerrors.Errorf("could not open %q: %w", outfile, err)
+			return fmt.Errorf("could not open %q: %w", outfile, err)
 		}
 
 		// add all files
 		for _, d := range scripts {
 			buf, err := ioutil.ReadFile(filepath.Join(s.flags.Wd, d.path))
 			if err != nil {
-				return xerrors.Errorf("could not read js %q: %w", fn, err)
+				return fmt.Errorf("could not read js %q: %w", fn, err)
 			}
 			if _, err = f.WriteString(strings.TrimSuffix(string(buf), "\n") + "\n"); err != nil {
-				return xerrors.Errorf("could not write %q to %q: %w", fn, outfile, err)
+				return fmt.Errorf("could not write %q to %q: %w", fn, outfile, err)
 			}
 		}
 
 		// close
 		if err = f.Close(); err != nil {
-			return xerrors.Errorf("could not close %q: %w", outfile, err)
+			return fmt.Errorf("could not close %q: %w", outfile, err)
 		}
 
 		// uglify
@@ -379,7 +379,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 			outfile,
 		)
 		if err != nil {
-			return xerrors.Errorf("could not uglify %q: %w", outfile, err)
+			return fmt.Errorf("could not uglify %q: %w", outfile, err)
 		}
 
 		return s.dist.AddFile(jsDir+"/"+fn, uglyfile)
@@ -403,12 +403,12 @@ func (s *Script) addGeoip(_, dir string) {
 		path := filepath.Join(dir, "geoip.go")
 		fi, err := os.Stat(path)
 		if err != nil && !os.IsNotExist(err) {
-			return xerrors.Errorf("could not stat %s: %w", path, err)
+			return fmt.Errorf("could not stat %s: %w", path, err)
 		}
 
 		// check that maxmind license is defined if the file doesn't exist
 		if err != nil && os.IsNotExist(err) && s.flags.MaxMindLicense == "" {
-			return xerrors.Errorf("flag -maxMindLicense not provided: unable to generate %s", path)
+			return fmt.Errorf("flag -maxMindLicense not provided: unable to generate %s", path)
 		}
 
 		isExpired := true
@@ -587,26 +587,35 @@ func (s *Script) addSass(_, dir string) {
 
 		// ensure build/assetgen exists
 		if err = os.MkdirAll(filepath.Join(s.flags.Build, "assetgen"), 0755); err != nil {
-			return xerrors.Errorf("could not create assetgen directory: %w", err)
+			return fmt.Errorf("could not create assetgen directory: %w", err)
+		}
+
+		// if tailwind.config.js doesn't exist, generate it
+		tailwindJs := filepath.Join(s.flags.Assets, "sass", "tailwind.config.js")
+		if !fileExists(tailwindJs) {
+			err = run(s.flags, "tailwindcss", "init", tailwindJs, "--full")
+			if err != nil {
+				return fmt.Errorf("could not generate tailwind css config: %w", err)
+			}
 		}
 
 		// write sass.js, postcss.config.js, and _assetgen.scss to build dir
 		err = ioutil.WriteFile(filepath.Join(s.flags.Build, sassJs), []byte(tplf(sassJs)), 0644)
 		if err != nil {
-			return xerrors.Errorf("could not write %s: %w", sassJs, err)
+			return fmt.Errorf("could not write %s: %w", sassJs, err)
 		}
-		err = ioutil.WriteFile(filepath.Join(s.flags.Build, postcssJs), []byte(tplf(postcssJs, filepath.Join(s.flags.Assets, templatesDir))), 0644)
+		err = ioutil.WriteFile(filepath.Join(s.flags.Build, postcssJs), []byte(tplf(postcssJs, tailwindJs, filepath.Join(s.flags.Assets, templatesDir))), 0644)
 		if err != nil {
-			return xerrors.Errorf("could not write %s: %w", postcssJs, err)
+			return fmt.Errorf("could not write %s: %w", postcssJs, err)
 		}
 		err = ioutil.WriteFile(filepath.Join(s.flags.Build, "assetgen", assetgenScss), []byte(tplf(assetgenScss)), 0644)
 		if err != nil {
-			return xerrors.Errorf("could not write: %s: %w", assetgenScss, err)
+			return fmt.Errorf("could not write: %s: %w", assetgenScss, err)
 		}
 
 		// write fontawesome to build dir
 		if err = installFontAwesome(s.flags, s.dist); err != nil {
-			return xerrors.Errorf("could not install fontawesome: %w", err)
+			return fmt.Errorf("could not install fontawesome: %w", err)
 		}
 
 		// FIXME: other than for debugging purposes, is it necessary to write
@@ -615,10 +624,10 @@ func (s *Script) addSass(_, dir string) {
 		// write temporary manifest
 		manifest, err := s.dist.ManifestBytes()
 		if err != nil {
-			return xerrors.Errorf("could not generate manifest: %w", err)
+			return fmt.Errorf("could not generate manifest: %w", err)
 		}
 		if err = ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
-			return xerrors.Errorf("could not write manifest.json: %w", err)
+			return fmt.Errorf("could not write manifest.json: %w", err)
 		}
 
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -655,7 +664,7 @@ func (s *Script) addSass(_, dir string) {
 			// run node-sass
 			err = run(s.flags, "node-sass", append(params, n)...)
 			if err != nil {
-				return xerrors.Errorf("could not run node-sass: %w", err)
+				return fmt.Errorf("could not run node-sass: %w", err)
 			}
 
 			postCss := filepath.Join(s.flags.Build, cssDir, fn+".postcss.css")
@@ -672,7 +681,7 @@ func (s *Script) addSass(_, dir string) {
 				filepath.Join(s.flags.Build, cssDir, fn+".css"),
 			)
 			if err != nil {
-				return xerrors.Errorf("could not run postcss: %w", err)
+				return fmt.Errorf("could not run postcss: %w", err)
 			}
 
 			// cleancss
@@ -688,20 +697,20 @@ func (s *Script) addSass(_, dir string) {
 				postCss,
 			)
 			if err != nil {
-				return xerrors.Errorf("could not run cleancss: %w", err)
+				return fmt.Errorf("could not run cleancss: %w", err)
 			}
 
 			// strip annoying comments
 			buf, err := ioutil.ReadFile(cleanCss)
 			if err != nil {
-				return xerrors.Errorf("could not read cleancss: %w", err)
+				return fmt.Errorf("could not read cleancss: %w", err)
 			}
 
 			// write final css
 			buf = stripCssCommentsRE.ReplaceAll(buf, nil)
 			err = ioutil.WriteFile(finalCss, buf, 0644)
 			if err != nil {
-				return xerrors.Errorf("could not write final css: %w", err)
+				return fmt.Errorf("could not write final css: %w", err)
 			}
 
 			return s.dist.AddFile(cssDir+"/"+fn+".css", finalCss)
@@ -819,7 +828,7 @@ func (s *Script) ConfigDeps() error {
 	}
 	err = json.Unmarshal(buf, &v)
 	if err != nil {
-		return xerrors.New("invalid package.json")
+		return errors.New("invalid package.json")
 	}
 
 	// build params
@@ -884,11 +893,11 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 		"asset($url)": func(v ...interface{}) (interface{}, error) {
 			// check args
 			if len(v) != 1 {
-				return nil, xerrors.New("invalid number of args")
+				return nil, errors.New("invalid number of args")
 			}
 			z, ok := v[0].(string)
 			if !ok {
-				return nil, xerrors.New("$url must be a string")
+				return nil, errors.New("$url must be a string")
 			}
 
 			// fix webfonts path (fontawesome)
@@ -907,7 +916,7 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 			// grab manifest
 			m, err := s.dist.Manifest()
 			if err != nil {
-				return nil, xerrors.Errorf("unable to load manifest: %w", err)
+				return nil, fmt.Errorf("unable to load manifest: %w", err)
 			}
 
 			// find asset name
@@ -961,7 +970,7 @@ func (s *Script) findNodeModulesFile(jd jsdep) (string, error) {
 		for _, d := range []string{"", "dist", "src"} {
 			pat, err := glob.Compile(filepath.Join(dir, d, jd.path))
 			if err != nil {
-				return xerrors.Errorf("invalid path %q: %w", jd.path, err)
+				return fmt.Errorf("invalid path %q: %w", jd.path, err)
 			}
 			if pat.Match(n) {
 				found = n
@@ -973,7 +982,7 @@ func (s *Script) findNodeModulesFile(jd jsdep) (string, error) {
 		return "", err
 	}
 	if found == "" {
-		return "", xerrors.Errorf("could not find %q in npm package %s", jd.path, jd.name)
+		return "", fmt.Errorf("could not find %q in npm package %s", jd.path, jd.name)
 	}
 	return found, nil
 }
@@ -985,7 +994,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 
 	// ensure directory exists
 	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
-		return xerrors.Errorf("unable to fix node_modules/.bin: %w", err)
+		return fmt.Errorf("unable to fix node_modules/.bin: %w", err)
 	}
 
 	// erase all links in bin dir
@@ -996,10 +1005,10 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		case path == flags.NodeModulesBin:
 			return nil
 		case fi.Mode()&os.ModeSymlink == 0:
-			return xerrors.Errorf("%s is not a symlink", path)
+			return fmt.Errorf("%s is not a symlink", path)
 		}
 		if err = os.Remove(path); err != nil {
-			return xerrors.Errorf("unable to remove %s: %w", path, err)
+			return fmt.Errorf("unable to remove %s: %w", path, err)
 		}
 		return nil
 	})
@@ -1061,7 +1070,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		for _, z := range v {
 			rel, err := filepath.Rel(flags.NodeModules, z.dir)
 			if err != nil {
-				return xerrors.Errorf("could not determine node-relative path for %s: %w", z.dir, err)
+				return fmt.Errorf("could not determine node-relative path for %s: %w", z.dir, err)
 			}
 			if !strings.Contains(rel, string(filepath.Separator)) {
 				l = z
@@ -1073,7 +1082,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		linkpath := filepath.Join(l.dir, l.path)
 		oldname, err := realpath.Realpath(linkpath)
 		if err != nil {
-			return xerrors.Errorf("unable to determine path for %s: %w", linkpath, err)
+			return fmt.Errorf("unable to determine path for %s: %w", linkpath, err)
 		}
 		newname := filepath.Join(flags.NodeModulesBin, n)
 
@@ -1087,7 +1096,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 
 		// symlink
 		if err = os.Symlink(oldname, newname); err != nil {
-			return xerrors.Errorf("unable to symlink %s to %s: %w", newname, oldname, err)
+			return fmt.Errorf("unable to symlink %s to %s: %w", newname, oldname, err)
 		}
 
 		// fix permissions

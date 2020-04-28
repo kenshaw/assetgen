@@ -12,12 +12,11 @@ require (
 	github.com/spf13/afero v1.2.2
 	github.com/valyala/quicktemplate v1.4.1
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/crypto v0.0.0-20200423211502-4bdfaf469ed5
-	golang.org/x/net v0.0.0-20200421231249-e086a090c8fd // indirect
+	golang.org/x/crypto v0.0.0-20200427165652-729f1e841bcc
+	golang.org/x/net v0.0.0-20200425230154-ff2c4b7c35a0 // indirect
 	golang.org/x/sync v0.0.0-20200317015054-43a5402ce75a
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
-	golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 )
 
 replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d

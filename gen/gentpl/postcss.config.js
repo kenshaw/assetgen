@@ -1,8 +1,10 @@
-const purgecss = require('@fullhuman/postcss-purgecss')({
-  content: [ '%s/*.html' ],
-  defaultExtractor: (content) => content.match(/[\w-/:]+(?<!:)/g) || [],
-});
-
 module.exports = {
-  plugins: [require('tailwindcss'), require('autoprefixer'), purgecss]
+  plugins: [
+    require('tailwindcss')(%q),
+    require('autoprefixer'),
+    require('@fullhuman/postcss-purgecss')({
+      content: [%q+'/*.html'],
+      defaultExtractor: (content) => content.match(/[\w-/:]+(?<!:)/g) || [],
+    })
+  ]
 };

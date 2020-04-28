@@ -2,14 +2,15 @@ package gen
 
 import (
 	"context"
+	"errors"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/yookoala/realpath"
-	"golang.org/x/xerrors"
 )
 
 const (
@@ -51,7 +52,7 @@ func Run() error {
 	// load working directory
 	wd, err := os.Getwd()
 	if err != nil {
-		return xerrors.Errorf("could not determine working directory: %w", err)
+		return fmt.Errorf("could not determine working directory: %w", err)
 	}
 
 	// build flags
@@ -59,7 +60,7 @@ func Run() error {
 	fs := flags.FlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
 	err = fs.Parse(os.Args[1:])
 	if err != nil {
-		return xerrors.Errorf("could not parse args: %w", err)
+		return fmt.Errorf("could not parse args: %w", err)
 	}
 
 	return Assetgen(flags)
@@ -72,22 +73,22 @@ func Assetgen(flags *Flags) error {
 	// check working directory is usable
 	wdfi, err := os.Stat(flags.Wd)
 	if err != nil || !wdfi.IsDir() {
-		return xerrors.Errorf("cannot read from working directory %q", flags.Wd)
+		return fmt.Errorf("cannot read from working directory %q", flags.Wd)
 	}
 	wd, err := realpath.Realpath(flags.Wd)
 	if err != nil {
-		return xerrors.Errorf("could not determine real path for %s: %w", flags.Wd, err)
+		return fmt.Errorf("could not determine real path for %s: %w", flags.Wd, err)
 	}
 	flags.Wd = wd
 
 	// ensure workers is at least 1
 	if flags.Workers < 1 {
-		return xerrors.New("workers must be at least 1")
+		return errors.New("workers must be at least 1")
 	}
 
 	// ensure valid trans func name
 	if !isValidIdentifier(flags.TFuncName) {
-		return xerrors.New("invalid trans func name")
+		return errors.New("invalid trans func name")
 	}
 
 	// ensure paths are set
@@ -116,7 +117,7 @@ func Assetgen(flags *Flags) error {
 
 	// set working directory
 	if err = os.Chdir(flags.Wd); err != nil {
-		return xerrors.Errorf("could not change to dir: %w", err)
+		return fmt.Errorf("could not change to dir: %w", err)
 	}
 
 	// check setup
@@ -130,27 +131,27 @@ func Assetgen(flags *Flags) error {
 		flags.NodeModulesBin,
 		os.Getenv("PATH"),
 	}, ":")); err != nil {
-		return xerrors.Errorf("could not set PATH: %w", err)
+		return fmt.Errorf("could not set PATH: %w", err)
 	}
 
 	// set NODE_PATH
 	if err = os.Setenv("NODE_PATH", flags.NodeModules); err != nil {
-		return xerrors.Errorf("could not set NODE_PATH: %w", err)
+		return fmt.Errorf("could not set NODE_PATH: %w", err)
 	}
 	// load script
 	s, err := LoadScript(flags)
 	if err != nil {
-		return xerrors.Errorf("unable to load script %s: %w", flags.Script, err)
+		return fmt.Errorf("unable to load script %s: %w", flags.Script, err)
 	}
 
 	// setup dependencies
 	if err = s.ConfigDeps(); err != nil {
-		return xerrors.Errorf("unable to configure dependencies: %w", err)
+		return fmt.Errorf("unable to configure dependencies: %w", err)
 	}
 
 	// fix links in node/.bin directory
 	if err = fixNodeModulesBinLinks(flags); err != nil {
-		return xerrors.Errorf("unable to fix bin links in %s: %w", flags.NodeModulesBin, err)
+		return fmt.Errorf("unable to fix bin links in %s: %w", flags.NodeModulesBin, err)
 	}
 
 	ctxt, cancel := context.WithCancel(context.Background())
@@ -158,7 +159,7 @@ func Assetgen(flags *Flags) error {
 	// start callback server
 	sock, err := s.startCallbackServer(ctxt)
 	if err != nil {
-		return xerrors.Errorf("could not start callback server: %w", err)
+		return fmt.Errorf("could not start callback server: %w", err)
 	}
 	defer func() {
 		cancel()
@@ -169,12 +170,12 @@ func Assetgen(flags *Flags) error {
 
 	// set ASSETGEN_SOCK
 	if err = os.Setenv("ASSETGEN_SOCK", sock); err != nil {
-		return xerrors.Errorf("could not set ASSETGEN_SOCK: %w", err)
+		return fmt.Errorf("could not set ASSETGEN_SOCK: %w", err)
 	}
 
 	// run script
 	if err = s.Execute(); err != nil {
-		return xerrors.Errorf("could not run script: %w", err)
+		return fmt.Errorf("could not run script: %w", err)
 	}
 
 	return nil
@@ -187,7 +188,7 @@ func checkSetup(flags *Flags) error {
 
 	// ensure primary directories exist
 	if err = checkDirs(flags, &flags.Cache, &flags.Build, &flags.Assets); err != nil {
-		return xerrors.Errorf("unable to fix .cache build assets: %w", err)
+		return fmt.Errorf("unable to fix .cache build assets: %w", err)
 	}
 
 	// check node + yarn
@@ -216,18 +217,18 @@ func checkSetup(flags *Flags) error {
 
 	// check dirs node_modules + node_modules/.bin
 	if err = checkDirs(flags, &flags.NodeModules, &flags.NodeModulesBin); err != nil {
-		return xerrors.Errorf("unable to fix node_modules and node_modules/.bin: %w", err)
+		return fmt.Errorf("unable to fix node_modules and node_modules/.bin: %w", err)
 	}
 
 	// setup files
 	if err = setupFiles(flags); err != nil {
-		return xerrors.Errorf("unable to setup files: %w", err)
+		return fmt.Errorf("unable to setup files: %w", err)
 	}
 
 	// do pure lockfile install
 	if !nodeModulesPresent && yarnLockPresent {
 		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
-			return xerrors.New("unable to install locked deps: please fix manually")
+			return errors.New("unable to install locked deps: please fix manually")
 		}
 	}
 
@@ -237,13 +238,13 @@ func checkSetup(flags *Flags) error {
 	} {
 		_, err := filepath.Rel(flags.Wd, d.v)
 		if err != nil || !isParentDir(flags.Wd, d.v) {
-			return xerrors.Errorf("%s path must be subdirectory of working directory", d.n)
+			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
 		}
 	}
 
 	// run yarn install
 	if err = runSilent(flags, flags.YarnBin, "install", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
-		return xerrors.New("yarn is out of sync: please fix manually")
+		return errors.New("yarn is out of sync: please fix manually")
 	}
 
 	// run yarn upgrade
@@ -253,7 +254,7 @@ func checkSetup(flags *Flags) error {
 			params = append(params, "--latest")
 		}
 		if err = runSilent(flags, flags.YarnBin, params...); err != nil {
-			return xerrors.Errorf("unable to run yarn upgrade: %w", err)
+			return fmt.Errorf("unable to run yarn upgrade: %w", err)
 		}
 	}
 
@@ -267,14 +268,14 @@ func checkDirs(flags *Flags, dirs ...*string) error {
 	for _, d := range dirs {
 		v, err := filepath.Abs(*d)
 		if err != nil {
-			return xerrors.Errorf("could not resolve path %q", *d)
+			return fmt.Errorf("could not resolve path %q", *d)
 		}
 		if err = os.MkdirAll(v, 0755); err != nil {
-			return xerrors.Errorf("could not create directory %s: %w", v, err)
+			return fmt.Errorf("could not create directory %s: %w", v, err)
 		}
 		v, err = realpath.Realpath(v)
 		if err != nil {
-			return xerrors.Errorf("could not determine realpath for %q", *d)
+			return fmt.Errorf("could not determine realpath for %q", *d)
 		}
 		*d = v
 	}
@@ -312,10 +313,10 @@ func checkNode(flags *Flags) error {
 	// check node version
 	nodeVer, err := runCombined(flags, flags.NodeBin, "--version")
 	if err != nil {
-		return xerrors.Errorf("unable to determine node version: %w", err)
+		return fmt.Errorf("unable to determine node version: %w", err)
 	}
 	if !compareSemver(nodeVer, nodeConstraint) {
-		return xerrors.Errorf("%s version must be %s, currently: %s", flags.NodeBin, nodeConstraint, nodeVer)
+		return fmt.Errorf("%s version must be %s, currently: %s", flags.NodeBin, nodeConstraint, nodeVer)
 	}
 
 	return nil
@@ -351,10 +352,10 @@ func checkYarn(flags *Flags) error {
 	// check yarn version
 	yarnVer, err := runCombined(flags, flags.YarnBin, "--version")
 	if err != nil {
-		return xerrors.Errorf("unable to determine yarn version: %w", err)
+		return fmt.Errorf("unable to determine yarn version: %w", err)
 	}
 	if !compareSemver(strings.TrimPrefix(yarnVer, "v"), yarnConstraint) {
-		return xerrors.Errorf("%s version must be %s, currently: %s", flags.YarnBin, yarnConstraint, yarnVer)
+		return fmt.Errorf("%s version must be %s, currently: %s", flags.YarnBin, yarnConstraint, yarnVer)
 	}
 	return nil
 }
