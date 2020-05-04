@@ -432,7 +432,7 @@ func (s *Script) addGeoip(_, dir string) {
 	})
 }
 
-var imageExtRE = regexp.MustCompile(`(?i)\.(jpe?g|gif|png|svg|mp4|json)$`)
+var imageExtRE = regexp.MustCompile(`(?i)\.(jpe?g|gif|png|svg|mp4|webm|json)$`)
 
 // addImages configures a script step for optimizing and packing image files.
 //
