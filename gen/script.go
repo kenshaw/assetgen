@@ -375,7 +375,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 			"uglifyjs",
 			"--source-map",
 			"--compress",
-			"--output="+uglyfile,
+			"--output", uglyfile,
 			outfile,
 		)
 		if err != nil {
@@ -672,7 +672,7 @@ func (s *Script) addSass(_, dir string) {
 			finalCss := filepath.Join(s.flags.Build, cssDir, fn+".final.css")
 
 			// postcss
-			err = runSilent(
+			err = run(
 				s.flags,
 				"postcss",
 				"--config="+filepath.Join(s.flags.Build, postcssJs),
