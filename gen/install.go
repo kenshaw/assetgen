@@ -192,11 +192,19 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	return buf, nil
 }
 
+var semverRE = regexp.MustCompile(`^v?[0-9]+\.[0-9]+\.[0-9]+$`)
+
 // installYarn installs yarn to the cache directory.
 func installYarn(flags *Flags) (string, string, error) {
 	v, assets, err := githubLatestAssets(flags, "yarnpkg/yarn", "yarn")
 	if err != nil {
 		return "", "", err
+	}
+	if !semverRE.MatchString(v) {
+		return "", "", fmt.Errorf("cannot retrieve latest yarn release: invalid release tag %s", v)
+	}
+	if !strings.HasPrefix(v, "v") {
+		v = "v" + v
 	}
 
 	// build paths
@@ -242,9 +250,8 @@ func installYarn(flags *Flags) (string, string, error) {
 	return yarnPath, binPath, nil
 }
 
-// getYarnAndVerify retrieves the node.js binary distribution for the specified
-// version, platform, and file extension and verifies its hash in the
-// SHASUMS256.txt file.
+// getYarnAndVerify retrieves the yarn source distribution for the specified
+// version, and verifies it against the accompanying .asc file.
 func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byte, error) {
 	n := fmt.Sprintf("yarn-%v.tar.gz", version)
 
