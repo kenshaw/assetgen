@@ -18,7 +18,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver"
-	"github.com/brankas/assetgen/pack"
+	"github.com/kenshaw/assetgen/pack"
 	"golang.org/x/crypto/openpgp"
 )
 

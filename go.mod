@@ -1,4 +1,4 @@
-module github.com/brankas/assetgen
+module github.com/kenshaw/assetgen
 
 go 1.12
 
@@ -18,4 +18,4 @@ require (
 	golang.org/x/tools v0.0.0-20190420181800-aa740d480789 // indirect
 )
 
-replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d
+replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.1.0

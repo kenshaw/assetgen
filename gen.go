@@ -8,11 +8,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/brankas/assetgen/pack"
+	"github.com/kenshaw/assetgen/pack"
 )
 
 var (
-	flagPkg = flag.String("pkg", "github.com/brankas/assetgen", "package")
+	flagPkg = flag.String("pkg", "github.com/kenshaw/assetgen", "package")
 	flagDir = flag.String("dir", "gen/gentpl", "directory with files")
 	flagOut = flag.String("out", "gen/gentpl.go", "out file name")
 )

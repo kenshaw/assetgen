@@ -26,7 +26,7 @@ import (
 	"github.com/yookoala/realpath"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/brankas/assetgen/pack"
+	"github.com/kenshaw/assetgen/pack"
 )
 
 // dep wraps package dependency information.

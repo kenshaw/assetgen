@@ -4,8 +4,8 @@ github.com/andybalholm/brotli v1.0.0/go.mod h1:loMXtMfwqflxFJPmdbJO0a3KNoPuLBgiu
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/gobwas/glob v0.2.3 h1:A4xDbljILXROh+kObIiy5kIaPYD8e96x1tgBhUI5J+Y=
 github.com/gobwas/glob v0.2.3/go.mod h1:d3Ez4x06l9bZtSvzIay5+Yzi0fmZzPgnTbPcKjJAkT8=
-github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d h1:j9P9kKobGT3j/3MGaGDJeMIO/ybdbdiAyLDvkCtfwxQ=
-github.com/kenshaw/vfsgen v0.0.0-20181201224209-11cc086c1a6d/go.mod h1:XZL+TJ5XX1jr7vL1nNnD/WYQzZ8qPqFuFid5H+v9q30=
+github.com/kenshaw/vfsgen v0.1.0 h1:CbnkI2qDsns3hJes6BOXH5GBeV9gR01/veeehEE0MQA=
+github.com/kenshaw/vfsgen v0.1.0/go.mod h1:eBQYCYAcu+E23zLohWgTifHoykGivgeTRkbLw6Gi+Ms=
 github.com/klauspost/compress v1.10.7/go.mod h1:aoV0uJVorq1K+umq18yTdKaF57EivdYsUV+/s2qKfXs=
 github.com/klauspost/compress v1.11.0/go.mod h1:aoV0uJVorq1K+umq18yTdKaF57EivdYsUV+/s2qKfXs=
 github.com/kr/fs v0.1.0/go.mod h1:FFnZGqtBN9Gxj7eW1uZ42v5BccTP0vu6NEaFoC2HwRg=

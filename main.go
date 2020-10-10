@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/brankas/assetgen/gen"
+	"github.com/kenshaw/assetgen/gen"
 )
 
 func main() {
