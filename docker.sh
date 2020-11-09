@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION=1.15.2
+VERSION=1.15.4
 
 set -ex
 
