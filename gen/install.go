@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/Masterminds/semver"
+	"github.com/kenshaw/assetgen/gen/sigs"
 	"github.com/kenshaw/assetgen/pack"
 	"golang.org/x/crypto/openpgp"
 )
@@ -29,7 +30,6 @@ func installNode(flags *Flags) (string, string, error) {
 	if err != nil {
 		return "", "", err
 	}
-
 	// env variables
 	platform, ext := runtime.GOOS, ".tar.gz"
 	switch runtime.GOOS {
@@ -40,14 +40,12 @@ func installNode(flags *Flags) (string, string, error) {
 		return "", "", fmt.Errorf("unsupported os: %s", runtime.GOOS)
 	}
 	platform += "-x64"
-
 	// build paths
 	nodePath := filepath.Join(flags.Cache, "node", v, platform)
 	binPath := filepath.Join(nodePath, "bin", "node")
 	if runtime.GOOS == "windows" {
 		binPath = filepath.Join(nodePath, "node.exe")
 	}
-
 	// stat node path
 	fi, err := os.Stat(binPath)
 	switch {
@@ -59,23 +57,19 @@ func installNode(flags *Flags) (string, string, error) {
 	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
 		return nodePath, binPath, nil
 	}
-
 	// remove existing directory
 	if err = os.RemoveAll(nodePath); err != nil {
 		return "", "", fmt.Errorf("could not remove %q: %w", nodePath, err)
 	}
-
 	// retrieve archive
 	buf, err := getNodeAndVerify(flags, v, platform, ext)
 	if err != nil {
 		return "", "", fmt.Errorf("could not retrieve node %s (%s): %w", v, platform, err)
 	}
-
 	// extract archive
 	if err = extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
 		return "", "", fmt.Errorf("unable to extract node %s (%s): %w", v, platform, err)
 	}
-
 	return nodePath, binPath, nil
 }
 
@@ -99,13 +93,11 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 		Files   []string
 		Lts     ltsString
 	}
-
 	// load available node versions
 	verBuf, err := getAndCache(flags, nodeDistURL+"/index.json", flags.Ttl, false, "node", "versions.json")
 	if err != nil {
 		return "", fmt.Errorf("could not retrieve available node versions: %w", err)
 	}
-
 	// parse node versions
 	var nodeVersions []nodeVersion
 	if err = json.Unmarshal(verBuf, &nodeVersions); err != nil {
@@ -114,7 +106,6 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 	if len(nodeVersions) < 1 {
 		return "", errors.New("node versions.json missing a defined version")
 	}
-
 	// sort node versions
 	vers, vs := make(map[string]nodeVersion), make([]*semver.Version, len(nodeVersions))
 	for i, nv := range nodeVersions {
@@ -125,14 +116,12 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 		vers[v.String()], vs[i] = nv, v
 	}
 	sort.Sort(semver.Collection(vs))
-
 	// find latest lts
 	for i := len(vs) - 1; i >= 0; i-- {
 		if v := vers[vs[i].String()]; v.Lts != "" {
 			return v.Version, nil
 		}
 	}
-
 	return "", errors.New("could not find a lts node version")
 }
 
@@ -142,7 +131,6 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, error) {
 	fn := fmt.Sprintf("node-%v-%s%s", version, platform, ext)
 	urlbase := nodeDistURL + "/" + version
-
 	// grab signature files
 	txt, err := getAndCache(flags, urlbase+"/SHASUMS256.txt", 0, false, "node", version, "SHASUMS256.txt")
 	if err != nil {
@@ -152,9 +140,8 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-
 	// verify signature
-	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(nodeKeyring)))
+	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(sigs.NodeJsPub))
 	if err != nil {
 		return nil, err
 	}
@@ -162,13 +149,11 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	if err != nil {
 		return nil, fmt.Errorf("could not verify signature: %w", err)
 	}
-
 	// get node
 	buf, err := getAndCache(flags, urlbase+"/"+fn, 0, false, "node", fn)
 	if err != nil {
 		return nil, err
 	}
-
 	// verify hash
 	h := sha256.Sum256(buf)
 	hash := hex.EncodeToString(h[:])
@@ -184,11 +169,9 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	if err = scanner.Err(); err != nil {
 		return nil, fmt.Errorf("could not read SHASUMS256.txt: %w", err)
 	}
-
 	if !found {
 		return nil, fmt.Errorf("could not find signature in SHASUMS256.txt for %s", fn)
 	}
-
 	return buf, nil
 }
 
@@ -206,14 +189,12 @@ func installYarn(flags *Flags) (string, string, error) {
 	if !strings.HasPrefix(v, "v") {
 		v = "v" + v
 	}
-
 	// build paths
 	yarnPath := filepath.Join(flags.Cache, "yarn", v)
 	binPath := filepath.Join(yarnPath, "bin", "yarn")
 	if runtime.GOOS == "windows" {
 		binPath = filepath.Join(yarnPath, "bin", "yarn.cmd")
 	}
-
 	// stat yarn path
 	fi, err := os.Stat(binPath)
 	switch {
@@ -225,28 +206,23 @@ func installYarn(flags *Flags) (string, string, error) {
 	case runtime.GOOS == "windows" || fi.Mode()|0111 != 0:
 		return yarnPath, binPath, nil
 	}
-
 	// remove existing directory
 	if err = os.RemoveAll(yarnPath); err != nil {
 		return "", "", fmt.Errorf("could not remove %q: %w", yarnPath, err)
 	}
-
 	// retrieve archive
 	buf, err := getYarnAndVerify(flags, v, assets)
 	if err != nil {
 		return "", "", fmt.Errorf("could not retrieve yarn %s: %w", v, err)
 	}
-
 	// create dir
 	if err = os.MkdirAll(yarnPath, 0755); err != nil {
 		return "", "", fmt.Errorf("could not create yarn %s directory: %w", v, err)
 	}
-
 	// extract archive
 	if err = extractTarGz(yarnPath, buf, fmt.Sprintf("yarn-%s", v)); err != nil {
 		return "", "", fmt.Errorf("unable to extract yarn %s: %w", v, err)
 	}
-
 	return yarnPath, binPath, nil
 }
 
@@ -254,7 +230,6 @@ func installYarn(flags *Flags) (string, string, error) {
 // version, and verifies it against the accompanying .asc file.
 func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byte, error) {
 	n := fmt.Sprintf("yarn-%v.tar.gz", version)
-
 	var err error
 	var buf, asc []byte
 	for _, a := range assets {
@@ -265,7 +240,6 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 			if err != nil {
 				return nil, err
 			}
-
 		// grab signature
 		case a.Name == n+".asc":
 			asc, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n+".asc")
@@ -274,9 +248,8 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 			}
 		}
 	}
-
 	// verify signature
-	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader([]byte(yarnKeyring)))
+	kr, err := openpgp.ReadArmoredKeyRing(bytes.NewReader(sigs.YarnPub))
 	if err != nil {
 		return nil, err
 	}
@@ -284,7 +257,6 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 	if err != nil {
 		return nil, fmt.Errorf("could not verify signature: %w", err)
 	}
-
 	return buf, nil
 }
 
@@ -296,13 +268,11 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 	if err != nil {
 		return err
 	}
-
 	// check release name
 	if !strings.HasPrefix(v, "Release ") {
 		return fmt.Errorf("invalid fontawesome release %q", v)
 	}
 	v = strings.TrimPrefix(v, "Release ")
-
 	// find asset
 	n := fmt.Sprintf("fontawesome-free-%s-web", v)
 	fn := n + ".zip"
@@ -317,13 +287,11 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 	if !found {
 		return fmt.Errorf("could not find fontawesome asset %s for release %s", fn, v)
 	}
-
 	// retrieve release
 	buf, err := getAndCache(flags, asset.BrowserDownloadURL, 0, false, "fontawesome", fn)
 	if err != nil {
 		return err
 	}
-
 	// remove and create build/fontawesome
 	dir := filepath.Join(flags.Build, "fontawesome")
 	if err = os.RemoveAll(dir); err != nil {
@@ -332,12 +300,10 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 	if err = os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("could not create fontawesome build directory: %w", err)
 	}
-
 	r, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
 	if err != nil {
 		return err
 	}
-
 	// extract and process
 	for _, z := range r.File {
 		switch {
@@ -351,13 +317,11 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 				return err
 			}
 			sbuf = bytes.Replace(sbuf, []byte("url("), []byte("asset("), -1)
-
 			// prefix filename
 			bn := filepath.Base(z.Name)
 			if !strings.HasPrefix(bn, "_") && bn != "fontawesome.scss" {
 				bn = "fontawesome-" + bn
 			}
-
 			out := filepath.Join(dir, bn)
 			if err = ioutil.WriteFile(out, sbuf, 0644); err != nil {
 				return fmt.Errorf("could not write fontawesome file %s: %w", out, err)
@@ -365,7 +329,6 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 			if err = fr.Close(); err != nil {
 				return err
 			}
-
 		case strings.HasPrefix(z.Name, n+"/webfonts/") && webfontRE.MatchString(z.Name):
 			fr, err := z.Open()
 			if err != nil {
@@ -383,6 +346,5 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 			}
 		}
 	}
-
 	return nil
 }

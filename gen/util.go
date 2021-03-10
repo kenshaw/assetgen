@@ -98,26 +98,22 @@ func compareSemver(version, constraint string) bool {
 // concat concatentates files and writes to out.
 func concat(files []string, out string) error {
 	var buf bytes.Buffer
-
 	// process files
 	for i, file := range files {
 		if i != 0 {
 			buf.WriteString("\n")
 		}
-
 		// read file
 		b, err := ioutil.ReadFile(file)
 		if err != nil {
 			return err
 		}
-
 		// append to buf
 		_, err = buf.Write(b)
 		if err != nil {
 			return err
 		}
 	}
-
 	return ioutil.WriteFile(out, buf.Bytes(), 0644)
 }
 
@@ -127,7 +123,6 @@ func cp(a, b string, re *regexp.Regexp) error {
 	if err != nil {
 		return err
 	}
-
 	return filepath.Walk(a, func(path string, f os.FileInfo, err error) error {
 		fn := strings.TrimPrefix(path, a)
 		switch {
@@ -143,13 +138,11 @@ func cp(a, b string, re *regexp.Regexp) error {
 				return err
 			}
 			defer src.Close()
-
 			dst, err := os.Create(filepath.Join(b, fn))
 			if err != nil {
 				return err
 			}
 			defer dst.Close()
-
 			_, err = io.Copy(dst, src)
 			return err
 		}
@@ -165,7 +158,6 @@ func isParentDir(a, b string) bool {
 	if err != nil {
 		panic(fmt.Sprintf("dir %q must exist", a))
 	}
-
 	for b != "" {
 		bfi, err := os.Lstat(b)
 		if err != nil {
@@ -180,7 +172,6 @@ func isParentDir(a, b string) bool {
 		}
 		b = n
 	}
-
 	return false
 }
 
@@ -193,7 +184,6 @@ func forceMap(v interface{}, names ...string) map[string]string {
 		}
 		return m
 	}
-
 	var name string
 	for _, n := range names {
 		if n != "" {
@@ -240,20 +230,16 @@ func htmlmin(flags *Flags, buf []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer out.Close()
-
 	if err = cmd.Start(); err != nil {
 		return nil, err
 	}
-
 	buf, err = ioutil.ReadAll(out)
 	if err != nil {
 		return nil, err
 	}
-
 	if err = cmd.Wait(); err != nil {
 		return nil, err
 	}
-
 	return buf, nil
 }
 
@@ -262,20 +248,18 @@ func isValidIdentifier(s string) bool {
 	if len(s) == 0 || !unicode.IsLetter([]rune(s[0:1])[0]) {
 		return false
 	}
-
 	for _, ch := range s {
 		if !isIdentifierChar(ch) {
 			return false
 		}
 	}
-
 	return true
 }
 
 // isIdentifierChar returns true if ch is a valid identifier character.
 func isIdentifierChar(ch rune) bool {
-	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' || ch >= 0x80 && unicode.IsLetter(ch) ||
-		'0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch)
+	return 'a' <= ch && ch <= 'z' || 'A' <= ch && ch <= 'Z' || ch == '_' ||
+		ch >= 0x80 && unicode.IsLetter(ch) || '0' <= ch && ch <= '9' || ch >= 0x80 && unicode.IsDigit(ch)
 }
 
 // md5hash returns the md5 hash of the contents of file in hex format.
@@ -306,7 +290,6 @@ func init() {
 			return err
 		}
 		defer f.Close()
-
 		var buf []byte
 		switch x := f.(type) {
 		case httpgzip.GzipByter:
@@ -324,7 +307,6 @@ func init() {
 				return err
 			}
 		}
-
 		templates[strings.TrimPrefix(n, "/")] = string(buf)
 		return nil
 	})
@@ -359,7 +341,6 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 	if err != nil {
 		return nil, err
 	}
-
 	// check if file exists on disk
 	fi, err := os.Stat(n)
 	switch {
@@ -369,9 +350,7 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 	case ttl == 0 || !time.Now().After(fi.ModTime().Add(ttl)):
 		return ioutil.ReadFile(n)
 	}
-
 	infof(flags, "RETRIEVING: %s", urlstr)
-
 	// retrieve
 	cl := &http.Client{}
 	req, err := http.NewRequest("GET", urlstr, nil)
@@ -383,16 +362,13 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 		return nil, err
 	}
 	defer res.Body.Close()
-
 	if res.StatusCode != 200 {
 		return nil, fmt.Errorf("could not retrieve %q (%d)", urlstr, res.StatusCode)
 	}
-
 	buf, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		return nil, err
 	}
-
 	// decode
 	if b64decode {
 		buf, err = base64.StdEncoding.DecodeString(string(buf))
@@ -400,12 +376,10 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 			return nil, err
 		}
 	}
-
 	// write
 	if err = ioutil.WriteFile(n, buf, 0644); err != nil {
 		return nil, err
 	}
-
 	return buf, nil
 }
 
@@ -431,7 +405,6 @@ func extractZip(dir string, buf []byte, chop string) error {
 	if err != nil {
 		return err
 	}
-
 	for _, z := range r.File {
 		n := filepath.Join(dir, strings.TrimPrefix(z.Name, chop))
 		fi := z.FileInfo()
@@ -440,7 +413,6 @@ func extractZip(dir string, buf []byte, chop string) error {
 			if err = os.MkdirAll(n, fi.Mode()); err != nil {
 				return err
 			}
-
 		default:
 			fr, err := z.Open()
 			if err != nil {
@@ -461,7 +433,6 @@ func extractZip(dir string, buf []byte, chop string) error {
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -471,9 +442,7 @@ func extractTarGz(dir string, buf []byte, chop string) error {
 	if err != nil {
 		return err
 	}
-
 	r := tar.NewReader(gz)
-
 loop:
 	for {
 		// next file
@@ -484,7 +453,6 @@ loop:
 		case err != nil:
 			return err
 		}
-
 		n := filepath.Join(dir, strings.TrimPrefix(h.Name, chop))
 		switch h.Typeflag {
 		case tar.TypeDir:
@@ -492,7 +460,6 @@ loop:
 			if err = os.MkdirAll(n, h.FileInfo().Mode()); err != nil {
 				return err
 			}
-
 		case tar.TypeReg:
 			// write file
 			f, err := os.OpenFile(n, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, h.FileInfo().Mode())
@@ -505,7 +472,6 @@ loop:
 			if err = f.Close(); err != nil {
 				return err
 			}
-
 		case tar.TypeSymlink:
 			// check that symlink is contained in dir and link
 			p := filepath.Clean(filepath.Join(filepath.Dir(n), h.Linkname))
@@ -515,7 +481,6 @@ loop:
 			if err = os.Symlink(p, n); err != nil {
 				return fmt.Errorf("could not create symlink for %q: %w", n, err)
 			}
-
 		default:
 			return fmt.Errorf("unsupported file type in tar: %v", h.Typeflag)
 		}
@@ -537,7 +502,6 @@ func githubLatestAssets(flags *Flags, repo, dir string) (string, []githubAsset, 
 	if err != nil {
 		return "", nil, err
 	}
-
 	var release struct {
 		Name   string        `json:"name"`
 		Assets []githubAsset `json:"assets"`
@@ -545,6 +509,5 @@ func githubLatestAssets(flags *Flags, repo, dir string) (string, []githubAsset, 
 	if err = json.Unmarshal(buf, &release); err != nil {
 		return "", nil, err
 	}
-
 	return release.Name, release.Assets, nil
 }

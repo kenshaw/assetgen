@@ -19,11 +19,9 @@ import (
 
 // Pack handles packing binary assets into a Go package.
 type Pack struct {
-	fs afero.Fs
-	h  map[string]string
-
+	fs  afero.Fs
+	h   map[string]string
 	pkg string
-
 	sync.RWMutex
 }
 
@@ -43,13 +41,11 @@ func New(opts ...Option) *Pack {
 func (p *Pack) Add(name string, r io.Reader) error {
 	p.Lock()
 	defer p.Unlock()
-
 	name = "/" + strings.TrimLeft(name, "/")
 	buf, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
 	}
-
 	err = p.fs.MkdirAll(filepath.Dir(name), 0755)
 	if err != nil {
 		return err
@@ -63,7 +59,6 @@ func (p *Pack) Add(name string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-
 	h := md5.Sum(buf)
 	p.h[name] = hex.EncodeToString(h[:])
 	return nil
@@ -93,7 +88,6 @@ func (p *Pack) AddString(name string, s string) error {
 func (p *Pack) Manifest() (map[string]string, error) {
 	p.RLock()
 	defer p.RUnlock()
-
 	m := make(map[string]string)
 	err := afero.Walk(p.fs, "/", func(n string, fi os.FileInfo, err error) error {
 		switch {
@@ -126,12 +120,10 @@ func (p *Pack) ManifestBytes() ([]byte, error) {
 func (p *Pack) WriteTo(out, name string) error {
 	p.RLock()
 	defer p.RUnlock()
-
 	pkg := p.pkg
 	if pkg == "" {
 		pkg = filepath.Base(filepath.Dir(out))
 	}
-
 	return vfsgen.Generate(p, vfsgen.Options{
 		VariableName:  name,
 		Filename:      out,

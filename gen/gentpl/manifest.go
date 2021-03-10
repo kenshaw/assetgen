@@ -35,18 +35,15 @@ func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 		case fi.IsDir():
 			return nil
 		}
-
 		f, ok := Assets.(vfsgen۰FS)[n]
 		if !ok {
 			return fmt.Errorf("no asset %%s", n)
 		}
-
 		fn, ok := manifest[n]
 		if !ok {
 			return fmt.Errorf("could not find path for %%s", n)
 		}
 		fn = "/" + fn
-
 		var data []byte
 		switch x := f.(type) {
 		case *vfsgen۰CompressedFileInfo:
@@ -61,7 +58,6 @@ func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 		case *vfsgen۰FileInfo:
 			data = x.content
 		}
-
 		contentType := http.DetectContentType(data)
 		switch {
 		case strings.HasPrefix(contentType, "text/") || contentType == "":
@@ -72,20 +68,17 @@ func vfsgen۰buildManifestAssets() (map[string]vfsgen۰Asset, error) {
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
-
 		assets[fn] = vfsgen۰Asset{
 			Data:        data,
 			ContentType: contentType,
 			ModTime:     fi.ModTime(),
 			SHA1:        fmt.Sprintf("%%x", sha1.Sum(data)),
 		}
-
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
 	return assets, nil
 }
 
@@ -94,12 +87,10 @@ func StaticHandler(urlpath func(context.Context) string) http.Handler {
 	if urlpath == nil {
 		panic("urlpath func cannot be nil")
 	}
-
 	assets, err := vfsgen۰buildManifestAssets()
 	if err != nil {
 		panic(err)
 	}
-
 	return http.HandlerFunc(func(res http.ResponseWriter, req *http.Request) {
 		// grab info
 		asset, ok := assets[urlpath(req.Context())]
@@ -107,29 +98,24 @@ func StaticHandler(urlpath func(context.Context) string) http.Handler {
 			http.Error(res, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 			return
 		}
-
 		// check if-modified-since header, bail if present
 		if t, err := time.Parse(http.TimeFormat, req.Header.Get("If-Modified-Since")); err == nil && asset.ModTime.Unix() <= t.Unix() {
 			res.WriteHeader(http.StatusNotModified) // 304
 			return
 		}
-
 		// check If-None-Match header, bail if present and match sha1
 		if req.Header.Get("If-None-Match") == asset.SHA1 {
 			res.WriteHeader(http.StatusNotModified) // 304
 			return
 		}
-
 		// set headers
 		res.Header().Set("Content-Type", asset.ContentType)
 		res.Header().Set("Date", time.Now().Format(http.TimeFormat))
-
 		// cache headers
 		res.Header().Set("Cache-Control", "public, no-transform, max-age=31536000")
 		res.Header().Set("Expires", time.Now().AddDate(1, 0, 0).Format(http.TimeFormat))
 		res.Header().Set("Last-Modified", asset.ModTime.Format(http.TimeFormat))
 		res.Header().Set("ETag", asset.SHA1)
-
 		// write data to response
 		res.Write(asset.Data)
 	})

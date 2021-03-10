@@ -14,47 +14,40 @@ import (
 )
 
 const (
-	nodeConstraint = ">=10.16.x"
-	yarnConstraint = ">=1.17.x"
-
+	nodeConstraint    = ">=10.16.x"
+	yarnConstraint    = ">=1.17.x"
 	cacheDir          = ".cache"
 	buildDir          = "build"
 	nodeModulesDir    = "node_modules"
 	nodeModulesBinDir = ".bin"
 	assetsDir         = "assets"
-
-	productionEnv  = "production"
-	developmentEnv = "development"
-
-	scriptName   = "assets.anko"
-	assetsFile   = "assets.go"
-	fontsDir     = "fonts"
-	geoipDir     = "geoip"
-	localesDir   = "locales"
-	imagesDir    = "images"
-	jsDir        = "js"
-	sassDir      = "sass"
-	cssDir       = "css"
-	sassJs       = "sass.js"
-	postcssJs    = "postcss.config.js"
-	assetgenScss = "_assetgen.scss"
-	templatesDir = "templates"
-
-	nodeDistURL = "https://nodejs.org/dist"
-
-	geoipURL = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&suffix=tar.gz&license_key=%s"
+	productionEnv     = "production"
+	developmentEnv    = "development"
+	scriptName        = "assets.anko"
+	assetsFile        = "assets.go"
+	fontsDir          = "fonts"
+	geoipDir          = "geoip"
+	localesDir        = "locales"
+	imagesDir         = "images"
+	jsDir             = "js"
+	sassDir           = "sass"
+	cssDir            = "css"
+	sassJs            = "sass.js"
+	postcssJs         = "postcss.config.js"
+	assetgenScss      = "_assetgen.scss"
+	templatesDir      = "templates"
+	nodeDistURL       = "https://nodejs.org/dist"
+	geoipURL          = "https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&suffix=tar.gz&license_key=%s"
 )
 
 // Run generates assets using the current working directory and default flags.
 func Run() error {
 	var err error
-
 	// load working directory
 	wd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("could not determine working directory: %w", err)
 	}
-
 	// build flags
 	flags := NewFlags(wd)
 	fs := flags.FlagSet(filepath.Base(os.Args[0]), flag.ExitOnError)
@@ -62,14 +55,12 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("could not parse args: %w", err)
 	}
-
 	return Assetgen(flags)
 }
 
 // Assetgen generates assets based on the passed flags.
 func Assetgen(flags *Flags) error {
 	var err error
-
 	// check working directory is usable
 	wdfi, err := os.Stat(flags.Wd)
 	if err != nil || !wdfi.IsDir() {
@@ -80,17 +71,14 @@ func Assetgen(flags *Flags) error {
 		return fmt.Errorf("could not determine real path for %s: %w", flags.Wd, err)
 	}
 	flags.Wd = wd
-
 	// ensure workers is at least 1
 	if flags.Workers < 1 {
 		return errors.New("workers must be at least 1")
 	}
-
 	// ensure valid trans func name
 	if !isValidIdentifier(flags.TFuncName) {
 		return errors.New("invalid trans func name")
 	}
-
 	// ensure paths are set
 	if flags.Cache == "" {
 		if dir := os.Getenv("ASSETGEN_CACHE"); dir != "" {
@@ -114,17 +102,14 @@ func Assetgen(flags *Flags) error {
 	if flags.Script == "" {
 		flags.Script = filepath.Join(flags.Assets, scriptName)
 	}
-
 	// set working directory
 	if err = os.Chdir(flags.Wd); err != nil {
 		return fmt.Errorf("could not change to dir: %w", err)
 	}
-
 	// check setup
 	if err = checkSetup(flags); err != nil {
 		return err
 	}
-
 	// set PATH
 	if err = os.Setenv("PATH", strings.Join([]string{
 		filepath.Dir(flags.NodeBin),
@@ -133,7 +118,6 @@ func Assetgen(flags *Flags) error {
 	}, ":")); err != nil {
 		return fmt.Errorf("could not set PATH: %w", err)
 	}
-
 	// set NODE_PATH
 	if err = os.Setenv("NODE_PATH", flags.NodeModules); err != nil {
 		return fmt.Errorf("could not set NODE_PATH: %w", err)
@@ -143,19 +127,15 @@ func Assetgen(flags *Flags) error {
 	if err != nil {
 		return fmt.Errorf("unable to load script %s: %w", flags.Script, err)
 	}
-
 	// setup dependencies
 	if err = s.ConfigDeps(); err != nil {
 		return fmt.Errorf("unable to configure dependencies: %w", err)
 	}
-
 	// fix links in node/.bin directory
 	if err = fixNodeModulesBinLinks(flags); err != nil {
 		return fmt.Errorf("unable to fix bin links in %s: %w", flags.NodeModulesBin, err)
 	}
-
 	ctxt, cancel := context.WithCancel(context.Background())
-
 	// start callback server
 	sock, err := s.startCallbackServer(ctxt)
 	if err != nil {
@@ -167,17 +147,14 @@ func Assetgen(flags *Flags) error {
 			warnf(flags, "could not remove %s: %w", sock, err)
 		}
 	}()
-
 	// set ASSETGEN_SOCK
 	if err = os.Setenv("ASSETGEN_SOCK", sock); err != nil {
 		return fmt.Errorf("could not set ASSETGEN_SOCK: %w", err)
 	}
-
 	// run script
 	if err = s.Execute(); err != nil {
 		return fmt.Errorf("could not run script: %w", err)
 	}
-
 	return nil
 }
 
@@ -185,12 +162,10 @@ func Assetgen(flags *Flags) error {
 // and directories exist as expected.
 func checkSetup(flags *Flags) error {
 	var err error
-
 	// ensure primary directories exist
 	if err = checkDirs(flags, &flags.Cache, &flags.Build, &flags.Assets); err != nil {
 		return fmt.Errorf("unable to fix .cache build assets: %w", err)
 	}
-
 	// check node + yarn
 	if err = checkNode(flags); err != nil {
 		return err
@@ -201,7 +176,6 @@ func checkSetup(flags *Flags) error {
 	if err = checkYarn(flags); err != nil {
 		return err
 	}
-
 	// determine if node_modules and yarn.lock is present
 	var nodeModulesPresent, yarnLockPresent bool
 	_, err = os.Stat(flags.NodeModules)
@@ -214,24 +188,20 @@ func checkSetup(flags *Flags) error {
 	case err == nil:
 		yarnLockPresent = true
 	}
-
 	// check dirs node_modules + node_modules/.bin
 	if err = checkDirs(flags, &flags.NodeModules, &flags.NodeModulesBin); err != nil {
 		return fmt.Errorf("unable to fix node_modules and node_modules/.bin: %w", err)
 	}
-
 	// setup files
 	if err = setupFiles(flags); err != nil {
 		return fmt.Errorf("unable to setup files: %w", err)
 	}
-
 	// do pure lockfile install
 	if !nodeModulesPresent && yarnLockPresent {
 		if err = run(flags, flags.YarnBin, "install", "--pure-lockfile", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
 			return errors.New("unable to install locked deps: please fix manually")
 		}
 	}
-
 	// ensure node_modules and assets directories exist
 	for _, d := range []struct{ n, v string }{
 		{"assets", flags.Assets},
@@ -241,12 +211,10 @@ func checkSetup(flags *Flags) error {
 			return fmt.Errorf("%s path must be subdirectory of working directory", d.n)
 		}
 	}
-
 	// run yarn install
 	if err = runSilent(flags, flags.YarnBin, "install", "--no-bin-links", "--modules-folder="+flags.NodeModules); err != nil {
 		return errors.New("yarn is out of sync: please fix manually")
 	}
-
 	// run yarn upgrade
 	if flags.YarnUpgrade {
 		params := []string{"upgrade", "--no-bin-links", "--modules-folder=" + flags.NodeModules}
@@ -257,7 +225,6 @@ func checkSetup(flags *Flags) error {
 			return fmt.Errorf("unable to run yarn upgrade: %w", err)
 		}
 	}
-
 	return nil
 }
 
@@ -279,7 +246,6 @@ func checkDirs(flags *Flags, dirs ...*string) error {
 		}
 		*d = v
 	}
-
 	return nil
 }
 
@@ -289,19 +255,16 @@ func checkDirs(flags *Flags, dirs ...*string) error {
 // dir and used instead.
 func checkNode(flags *Flags) error {
 	var err error
-
 	if flags.Node == "" {
 		if flags.Node, flags.NodeBin, err = installNode(flags); err != nil {
 			return err
 		}
 	}
-
 	node, err := realpath.Realpath(flags.Node)
 	if err != nil {
 		return err
 	}
 	flags.Node = node
-
 	if flags.NodeBin == "" {
 		if runtime.GOOS == "windows" {
 			flags.NodeBin = filepath.Join(flags.Node, "node.exe")
@@ -309,7 +272,6 @@ func checkNode(flags *Flags) error {
 			flags.NodeBin = filepath.Join(flags.Node, "bin", "node")
 		}
 	}
-
 	// check node version
 	nodeVer, err := runCombined(flags, flags.NodeBin, "--version")
 	if err != nil {
@@ -318,7 +280,6 @@ func checkNode(flags *Flags) error {
 	if !compareSemver(nodeVer, nodeConstraint) {
 		return fmt.Errorf("%s version must be %s, currently: %s", flags.NodeBin, nodeConstraint, nodeVer)
 	}
-
 	return nil
 }
 
@@ -328,19 +289,16 @@ func checkNode(flags *Flags) error {
 // dir and used instead.
 func checkYarn(flags *Flags) error {
 	var err error
-
 	if flags.Yarn == "" {
 		if flags.Yarn, flags.YarnBin, err = installYarn(flags); err != nil {
 			return err
 		}
 	}
-
 	yarn, err := realpath.Realpath(flags.Yarn)
 	if err != nil {
 		return err
 	}
 	flags.Yarn = yarn
-
 	if flags.YarnBin == "" {
 		if runtime.GOOS == "windows" {
 			flags.YarnBin = filepath.Join(flags.Yarn, "bin", "yarn.cmd")
@@ -348,7 +306,6 @@ func checkYarn(flags *Flags) error {
 			flags.YarnBin = filepath.Join(flags.Yarn, "bin", "yarn")
 		}
 	}
-
 	// check yarn version
 	yarnVer, err := runCombined(flags, flags.YarnBin, "--version")
 	if err != nil {

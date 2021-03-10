@@ -13,9 +13,7 @@ import (
 // setupFiles creates default files when they do not already exist.
 func setupFiles(flags *Flags) error {
 	var err error
-
 	app := filepath.Base(flags.Wd)
-
 	// build relative cache paths
 	var cacheList string
 	for i, d := range buildCacheDirs(flags.Wd, flags.Cache, flags.NodeModules, flags.NodeModulesBin) {
@@ -24,7 +22,6 @@ func setupFiles(flags *Flags) error {
 		}
 		cacheList = cacheList + fmt.Sprintf("\n    %q", d)
 	}
-
 	// create files if not present
 	for _, d := range []struct{ path, contents string }{
 		{filepath.Join(flags.Wd, "package.json"), tplf("package.json", app, app+" app", cacheList)},
@@ -36,7 +33,6 @@ func setupFiles(flags *Flags) error {
 			return fmt.Errorf("unable to setup %s: %w", d.path, err)
 		}
 	}
-
 	return nil
 }
 
@@ -50,7 +46,6 @@ func buildCacheDirs(wd string, paths ...string) []string {
 		dir, rel string
 		add      bool
 	}
-
 	// determine which of the supplied paths are children of wd
 	var dirs []dir
 	for _, p := range paths {
@@ -58,7 +53,6 @@ func buildCacheDirs(wd string, paths ...string) []string {
 			dirs = append(dirs, dir{p, r, true})
 		}
 	}
-
 	// build list
 	var d []string
 	for i := len(dirs) - 1; i >= 0; i-- {
@@ -77,7 +71,6 @@ func buildCacheDirs(wd string, paths ...string) []string {
 			d = append(d, dirs[i].rel)
 		}
 	}
-
 	sort.Strings(d)
 	return d
 }

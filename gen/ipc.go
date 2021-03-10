@@ -34,23 +34,19 @@ func NewIpcServer(m IpcCallbackMap, opts ...IpcServerOption) (*IpcServer, error)
 		return nil, err
 	}
 	sock += "/control.sock"
-
 	s := &IpcServer{
 		sock: sock,
 		m:    m,
 	}
-
 	// apply opts
 	for _, o := range opts {
 		if err := o(s); err != nil {
 			return nil, err
 		}
 	}
-
 	if s.logf == nil {
 		s.logf = log.Printf
 	}
-
 	return s, nil
 }
 
@@ -62,12 +58,10 @@ func (s *IpcServer) SocketPath() string {
 // Run runs the server.
 func (s *IpcServer) Run(ctxt context.Context) error {
 	ctxt, cancel := context.WithCancel(ctxt)
-
 	l, err := net.Listen("unix", s.sock)
 	if err != nil {
 		return err
 	}
-
 	// sig handler
 	go func() {
 		defer cancel()
@@ -75,10 +69,8 @@ func (s *IpcServer) Run(ctxt context.Context) error {
 		signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 		s.logf("caught signal: %s", <-sig)
 	}()
-
 	go func() {
 		defer l.Close()
-
 		for {
 			select {
 			default:
@@ -88,7 +80,6 @@ func (s *IpcServer) Run(ctxt context.Context) error {
 					return
 				}
 				go s.handle(ctxt, conn)
-
 			case <-ctxt.Done():
 				if err := ctxt.Err(); err != nil && err != context.Canceled {
 					s.logf("error: %w", ctxt.Err())
@@ -97,14 +88,12 @@ func (s *IpcServer) Run(ctxt context.Context) error {
 			}
 		}
 	}()
-
 	return nil
 }
 
 // handle handles incoming client connections.
 func (s *IpcServer) handle(ctxt context.Context, conn net.Conn) error {
 	defer conn.Close()
-
 	sn := bufio.NewScanner(conn)
 	for {
 		select {
@@ -118,7 +107,6 @@ func (s *IpcServer) handle(ctxt context.Context, conn net.Conn) error {
 					s.logf("error decoding msg: %w", err)
 					return err
 				}
-
 				// handle request
 				ret := make(map[string]interface{}, 1)
 				switch v.Type {
@@ -128,7 +116,6 @@ func (s *IpcServer) handle(ctxt context.Context, conn net.Conn) error {
 						funcs = append(funcs, fn)
 					}
 					ret["result"] = funcs
-
 				case "call":
 					res, err := s.doCall(v)
 					if err != nil {
@@ -136,11 +123,9 @@ func (s *IpcServer) handle(ctxt context.Context, conn net.Conn) error {
 					} else {
 						ret["result"] = res
 					}
-
 				default:
 					ret["error"] = "unknown request type"
 				}
-
 				return json.NewEncoder(conn).Encode(ret)
 			}
 			if err := sn.Err(); err != nil && err != io.EOF {

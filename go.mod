@@ -1,10 +1,11 @@
 module github.com/kenshaw/assetgen
 
-go 1.12
+go 1.16
 
 require (
 	github.com/Masterminds/semver v1.5.0
 	github.com/gobwas/glob v0.2.3
+	github.com/kenshaw/hkp v0.2.0 // indirect
 	github.com/mattn/anko v0.1.8
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/httpgzip v0.0.0-20190720172056-320755c1c1b0

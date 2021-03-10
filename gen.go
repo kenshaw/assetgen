@@ -11,26 +11,21 @@ import (
 	"github.com/kenshaw/assetgen/pack"
 )
 
-var (
-	flagPkg = flag.String("pkg", "github.com/kenshaw/assetgen", "package")
-	flagDir = flag.String("dir", "gen/gentpl", "directory with files")
-	flagOut = flag.String("out", "gen/gentpl.go", "out file name")
-)
-
 func main() {
+	pkg := flag.String("pkg", "github.com/kenshaw/assetgen", "package")
+	dir := flag.String("dir", "gen/gentpl", "directory with files")
+	out := flag.String("out", "gen/gentpl.go", "out file name")
 	flag.Parse()
-
-	if err := run(); err != nil {
+	if err := run(*pkg, *dir, *out); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 }
 
-func run() error {
-	pkg := filepath.Join(os.Getenv("GOPATH"), "src", *flagPkg)
-	out := filepath.Join(pkg, *flagOut)
-
+func run(pkg, dir, out string) error {
+	pkg = filepath.Join(os.Getenv("GOPATH"), "src", pkg)
+	out = filepath.Join(pkg, out)
 	p := pack.New()
-	err := filepath.Walk(filepath.Join(pkg, *flagDir), func(n string, fi os.FileInfo, err error) error {
+	err := filepath.Walk(filepath.Join(pkg, dir), func(n string, fi os.FileInfo, err error) error {
 		fn := filepath.Base(n)
 		switch {
 		case err != nil:
