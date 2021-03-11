@@ -1,14 +1,11 @@
 package gen
 
 import (
-	"archive/tar"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -17,7 +14,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/gobwas/glob"
 	"github.com/kenshaw/assetgen/pack"
@@ -46,23 +42,20 @@ type Script struct {
 	flags *Flags
 	// logf is the log func.
 	logf func(string, ...interface{})
-	// deps are package dependencies.
+	// nodeDeps are node package dependencies.
 	nodeDeps []dep
 	// sassIncludes are sass include directories.
 	sassIncludes []string
 	// pre are the pre setup steps to be executed in order.
 	pre []func() error
 	// exec is the steps to be executed, in order.
-	exec []func() error
+	exec []func(*pack.Pack) error
 	// post are the post setup steps to be executed in order.
 	post []func() error
-	// dist is the assets to distribute (ie, pack).
-	dist *pack.Pack
 }
 
 // LoadScript loads an assetgen script using the specified flags.
 func LoadScript(flags *Flags) (*Script, error) {
-	var err error
 	// load
 	buf, err := ioutil.ReadFile(flags.Script)
 	if err != nil {
@@ -72,7 +65,6 @@ func LoadScript(flags *Flags) (*Script, error) {
 	s := &Script{
 		flags: flags,
 		logf:  log.Printf,
-		dist:  pack.New(),
 	}
 	// create scripting runtime
 	a := env.NewEnv()
@@ -87,13 +79,12 @@ func LoadScript(flags *Flags) (*Script, error) {
 		{"npmjs", s.npmjs},
 		{"js", s.js},
 	} {
-		if err = a.Define(z.n, z.v); err != nil {
+		if err := a.Define(z.n, z.v); err != nil {
 			return nil, fmt.Errorf("unable to define %s: %w", z.n, err)
 		}
 	}
 	// execute
-	_, err = vm.Execute(a, nil, string(buf))
-	if err != nil {
+	if _, err := vm.Execute(a, nil, string(buf)); err != nil {
 		return nil, fmt.Errorf("unable to execute script %s: %w", flags.Script, err)
 	}
 	// add directory handling steps
@@ -102,10 +93,8 @@ func LoadScript(flags *Flags) (*Script, error) {
 		f func(string, string)
 	}{
 		{"fonts", s.addFonts},
-		{"geoip", s.addGeoip},
 		{"images", s.addImages},
 		{"sass", s.addSass},
-		{"locales", s.addLocales},
 		{"templates", s.addTemplates},
 	} {
 		// skip adding step if directory not present
@@ -134,57 +123,9 @@ func (s *Script) get(src string) ([]byte, error) {
 	return ioutil.ReadAll(res.Body)
 }
 
-// getAndRepackGeoip retrieves src, unpacks the downloaded data, and
-// repacks/writes it to dest as the passed variable name.
-func (s *Script) getAndRepackGeoip(dest, name string) error {
-	src := fmt.Sprintf(geoipURL, s.flags.MaxMindLicense)
-	s.logf("GET %s => %s", src, dest)
-	buf, err := s.get(src)
-	if err != nil {
-		return err
-	}
-	// decompress
-	gz, err := gzip.NewReader(bytes.NewReader(buf))
-	if err != nil {
-		return err
-	}
-	r := tar.NewReader(gz)
-	// storage
-	b := new(bytes.Buffer)
-	w := gzip.NewWriter(b)
-loop:
-	// process tar
-	for {
-		h, err := r.Next()
-		switch {
-		case err == io.EOF:
-			break loop
-		case err != nil:
-			return err
-		}
-		if !strings.HasSuffix(h.Name, ".mmdb") {
-			continue
-		}
-		if _, err = io.Copy(w, r); err != nil {
-			return err
-		}
-	}
-	// close
-	if err = w.Flush(); err != nil {
-		return err
-	}
-	if err = w.Close(); err != nil {
-		return err
-	}
-	// write packed data
-	p := pack.New()
-	p.AddBytes("GeoLite2-Country.mmdb.gz", b.Bytes())
-	return p.WriteTo(dest, name)
-}
-
 // concat is the script handler to concat one or more files.
 func (s *Script) concat(params ...interface{}) {
-	s.exec = append(s.exec, func() error {
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		return nil
 	})
 }
@@ -209,7 +150,7 @@ var staticDirNameRE = regexp.MustCompile("^[A-Za-z0-9]+$")
 
 // staticDir adds a static directory to the assets.
 func (s *Script) staticDir(name string) {
-	s.exec = append(s.exec, func() error {
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		if !staticDirNameRE.MatchString(name) {
 			return fmt.Errorf("invalid static dir name %q", name)
 		}
@@ -232,7 +173,7 @@ func (s *Script) staticDir(name string) {
 			if err != nil {
 				return fmt.Errorf("%q not located within the project: %w", fi.Name(), err)
 			}
-			return s.dist.AddFile(p, n)
+			return dist.PackFile(p, n)
 		})
 	})
 }
@@ -274,8 +215,7 @@ func (s *Script) js(fn string, v ...interface{}) {
 			s.nodeDeps = append(s.nodeDeps, dep{d.name, d.ver})
 		}
 	}
-	s.exec = append(s.exec, func() error {
-		var err error
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		if len(v) < 1 {
 			return errors.New("js() must be passed at least one arg")
 		}
@@ -302,14 +242,14 @@ func (s *Script) js(fn string, v ...interface{}) {
 		}
 		// ensure scripts are contained within project
 		for i := 0; i < len(scripts); i++ {
-			scripts[i].path, err = filepath.Rel(s.flags.Wd, scripts[i].path)
-			if err != nil {
+			var err error
+			if scripts[i].path, err = filepath.Rel(s.flags.Wd, scripts[i].path); err != nil {
 				return fmt.Errorf("js cannot be outside of project")
 			}
 		}
 		// ensure directory exists
 		dir := filepath.Join(s.flags.Build, jsDir)
-		if err = os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("could not create js dir: %w", err)
 		}
 		// open out file
@@ -324,28 +264,27 @@ func (s *Script) js(fn string, v ...interface{}) {
 			if err != nil {
 				return fmt.Errorf("could not read js %q: %w", fn, err)
 			}
-			if _, err = f.WriteString(strings.TrimSuffix(string(buf), "\n") + "\n"); err != nil {
+			if _, err := f.WriteString(strings.TrimSuffix(string(buf), "\n") + "\n"); err != nil {
 				return fmt.Errorf("could not write %q to %q: %w", fn, outfile, err)
 			}
 		}
 		// close
-		if err = f.Close(); err != nil {
+		if err := f.Close(); err != nil {
 			return fmt.Errorf("could not close %q: %w", outfile, err)
 		}
 		// uglify
 		ext := filepath.Ext(outfile)
 		uglyfile := strings.TrimSuffix(outfile, ext) + ".uglify" + ext
-		err = run(s.flags,
+		if err := run(s.flags,
 			"uglifyjs",
 			"--source-map",
 			"--compress",
 			"--output", uglyfile,
 			outfile,
-		)
-		if err != nil {
+		); err != nil {
 			return fmt.Errorf("could not uglify %q: %w", outfile, err)
 		}
-		return s.dist.AddFile(jsDir+"/"+fn, uglyfile)
+		return dist.PackFile(jsDir+"/"+fn, uglyfile)
 	})
 }
 
@@ -354,40 +293,6 @@ func (s *Script) js(fn string, v ...interface{}) {
 // This walks the fonts directory, and if there's a SCSS/CSS file, add it to
 // sass import path. All font files will be added to the manifest.
 func (s *Script) addFonts(_, dir string) {
-}
-
-// addGeoip configures a script step for packing geoip data.
-//
-// This looks at the geoip directory, and if there is no geoip data, downloads
-// the appropriate file (if it doesn't exist), and adds the file to the packed
-// data (but not to the manifest).
-func (s *Script) addGeoip(_, dir string) {
-	s.exec = append(s.exec, func() error {
-		path := filepath.Join(dir, "geoip.go")
-		fi, err := os.Stat(path)
-		if err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("could not stat %s: %w", path, err)
-		}
-		// check that maxmind license is defined if the file doesn't exist
-		if err != nil && os.IsNotExist(err) && s.flags.MaxMindLicense == "" {
-			return fmt.Errorf("flag -maxMindLicense not provided: unable to generate %s", path)
-		}
-		isExpired := true
-		if err == nil {
-			isExpired = time.Now().After(fi.ModTime().Add(s.flags.Ttl))
-		}
-		// bail if data isn't stale
-		if err == nil && s.flags.Ttl != 0 && !isExpired {
-			return nil
-		}
-		// bail if no license defined but is expired
-		if isExpired && s.flags.MaxMindLicense == "" {
-			warnf(s.flags, "flag -maxMindLicense was not provided and geoip database is stale, skipping generation for %s", path)
-			return nil
-		}
-		// download, repack and add to cache
-		return s.getAndRepackGeoip(path, "Geoip")
-	})
 }
 
 var imageExtRE = regexp.MustCompile(`(?i)\.(jpe?g|gif|png|svg|mp4|webm|json)$`)
@@ -409,7 +314,7 @@ func (s *Script) addImages(_, dir string) {
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
-	s.exec = append(s.exec, func() error {
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		// accumulate images
 		var all, changed []string
 		err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -481,12 +386,12 @@ func (s *Script) addImages(_, dir string) {
 				}
 			})
 		}
-		if err = eg.Wait(); err != nil {
+		if err := eg.Wait(); err != nil {
 			return err
 		}
 		// pack the generated images
 		for _, fn := range all {
-			if err := s.dist.AddFile(imagesDir+"/"+fn, filepath.Join(s.flags.Cache, imagesDir, fn)); err != nil {
+			if err := dist.PackFile(imagesDir+"/"+fn, filepath.Join(s.flags.Cache, imagesDir, fn)); err != nil {
 				return err
 			}
 		}
@@ -529,45 +434,52 @@ func (s *Script) addSass(_, dir string) {
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
-	s.exec = append(s.exec, func() error {
-		var err error
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		// ensure build/assetgen exists
-		if err = os.MkdirAll(filepath.Join(s.flags.Build, "assetgen"), 0755); err != nil {
+		if err := os.MkdirAll(filepath.Join(s.flags.Build, "assetgen"), 0755); err != nil {
 			return fmt.Errorf("could not create assetgen directory: %w", err)
 		}
 		// if tailwind.config.js doesn't exist, generate it
 		tailwindJs := filepath.Join(s.flags.Assets, "sass", "tailwind.config.js")
 		if !fileExists(tailwindJs) {
-			err = run(s.flags, "tailwindcss", "init", tailwindJs, "--full")
-			if err != nil {
+			if err := run(s.flags, "tailwindcss", "init", tailwindJs, "--full"); err != nil {
 				return fmt.Errorf("could not generate tailwind css config: %w", err)
 			}
 		}
 		// write sass.js, postcss.config.js, and _assetgen.scss to build dir
-		err = ioutil.WriteFile(filepath.Join(s.flags.Build, sassJs), []byte(tplf(sassJs)), 0644)
-		if err != nil {
+		if err := ioutil.WriteFile(
+			filepath.Join(s.flags.Build, sassJs),
+			[]byte(tplf(sassJs)),
+			0644,
+		); err != nil {
 			return fmt.Errorf("could not write %s: %w", sassJs, err)
 		}
-		err = ioutil.WriteFile(filepath.Join(s.flags.Build, postcssJs), []byte(tplf(postcssJs, tailwindJs, filepath.Join(s.flags.Assets, templatesDir))), 0644)
-		if err != nil {
+		if err := ioutil.WriteFile(
+			filepath.Join(s.flags.Build, postcssJs),
+			[]byte(tplf(postcssJs, tailwindJs, filepath.Join(s.flags.Assets, templatesDir))),
+			0644,
+		); err != nil {
 			return fmt.Errorf("could not write %s: %w", postcssJs, err)
 		}
-		err = ioutil.WriteFile(filepath.Join(s.flags.Build, "assetgen", assetgenScss), []byte(tplf(assetgenScss)), 0644)
-		if err != nil {
+		if err := ioutil.WriteFile(
+			filepath.Join(s.flags.Build, "assetgen", assetgenScss),
+			[]byte(tplf(assetgenScss)),
+			0644,
+		); err != nil {
 			return fmt.Errorf("could not write: %s: %w", assetgenScss, err)
 		}
 		// write fontawesome to build dir
-		if err = installFontAwesome(s.flags, s.dist); err != nil {
+		if err := installFontAwesome(s.flags, dist); err != nil {
 			return fmt.Errorf("could not install fontawesome: %w", err)
 		}
 		// FIXME: other than for debugging purposes, is it necessary to write
 		// FIXME: the manifest to disk?
 		// write temporary manifest
-		manifest, err := s.dist.ManifestBytes()
+		manifest, err := dist.ManifestBytes()
 		if err != nil {
 			return fmt.Errorf("could not generate manifest: %w", err)
 		}
-		if err = ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
+		if err := ioutil.WriteFile(filepath.Join(s.flags.Build, "manifest.json"), manifest, 0644); err != nil {
 			return fmt.Errorf("could not write manifest.json: %w", err)
 		}
 		return filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
@@ -599,27 +511,25 @@ func (s *Script) addSass(_, dir string) {
 				params = append(params, "--include-path="+z)
 			}
 			// run node-sass
-			err = run(s.flags, "node-sass", append(params, n)...)
-			if err != nil {
+			if err := run(s.flags, "node-sass", append(params, n)...); err != nil {
 				return fmt.Errorf("could not run node-sass: %w", err)
 			}
 			postCss := filepath.Join(s.flags.Build, cssDir, fn+".postcss.css")
 			cleanCss := filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css")
 			finalCss := filepath.Join(s.flags.Build, cssDir, fn+".final.css")
 			// postcss
-			err = run(
+			if err := run(
 				s.flags,
 				"postcss",
 				"--config="+filepath.Join(s.flags.Build, postcssJs),
 				"--map",
 				"--output="+postCss,
 				filepath.Join(s.flags.Build, cssDir, fn+".css"),
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("could not run postcss: %w", err)
 			}
 			// cleancss
-			err = runSilent(
+			if err := runSilent(
 				s.flags,
 				"cleancss",
 				"-O1", "specialComments:0",
@@ -629,8 +539,7 @@ func (s *Script) addSass(_, dir string) {
 				"--skip-rebase",
 				"--output="+cleanCss,
 				postCss,
-			)
-			if err != nil {
+			); err != nil {
 				return fmt.Errorf("could not run cleancss: %w", err)
 			}
 			// strip annoying comments
@@ -640,39 +549,11 @@ func (s *Script) addSass(_, dir string) {
 			}
 			// write final css
 			buf = stripCssCommentsRE.ReplaceAll(buf, nil)
-			err = ioutil.WriteFile(finalCss, buf, 0644)
-			if err != nil {
+			if err := ioutil.WriteFile(finalCss, buf, 0644); err != nil {
 				return fmt.Errorf("could not write final css: %w", err)
 			}
-			return s.dist.AddFile(cssDir+"/"+fn+".css", finalCss)
+			return dist.PackFile(cssDir+"/"+fn+".css", finalCss)
 		})
-	})
-}
-
-// addLocales configures a script step for packing locales data.
-//
-// This looks at the locales directory, and if there is any locales adds them
-// to the packed data (but not to the manifest).
-func (s *Script) addLocales(_, dir string) {
-	s.exec = append(s.exec, func() error {
-		p := pack.New()
-		err := filepath.Walk(dir, func(n string, fi os.FileInfo, err error) error {
-			switch {
-			case err != nil:
-				return err
-			case fi.IsDir() || !strings.HasSuffix(n, ".po") || strings.HasPrefix(filepath.Base(n), "."):
-				return nil
-			}
-			z, err := filepath.Rel(dir, n)
-			if err != nil {
-				return err
-			}
-			return p.AddFile(z, n)
-		})
-		if err != nil {
-			return err
-		}
-		return p.WriteTo(filepath.Join(dir, "locales.go"), "Locales")
 	})
 }
 
@@ -685,8 +566,7 @@ func (s *Script) addLocales(_, dir string) {
 func (s *Script) addTemplates(_, dir string) {
 	// add htmlmin dependency
 	s.nodeDeps = append(s.nodeDeps, dep{"html-minifier", ""})
-	s.exec = append(s.exec, func() error {
-		var err error
+	s.exec = append(s.exec, func(dist *pack.Pack) error {
 		wd, err := os.Getwd()
 		if err != nil {
 			return err
@@ -710,12 +590,12 @@ func (s *Script) addTemplates(_, dir string) {
 			}
 			// change to the directory (necessary for qtc's parser to work)
 			d := filepath.Dir(n)
-			if err = os.Chdir(d); err != nil {
+			if err := os.Chdir(d); err != nil {
 				return err
 			}
 			// generate go template
 			out := new(bytes.Buffer)
-			if err = qtcparser.Parse(out, bytes.NewReader(min), filepath.Base(n), filepath.Base(d)); err != nil {
+			if err := qtcparser.Parse(out, bytes.NewReader(min), filepath.Base(n), filepath.Base(d)); err != nil {
 				return err
 			}
 			// fix T(``) strings
@@ -746,8 +626,7 @@ func (s *Script) ConfigDeps() error {
 	var v struct {
 		Deps map[string]string `json:"dependencies"`
 	}
-	err = json.Unmarshal(buf, &v)
-	if err != nil {
+	if err := json.Unmarshal(buf, &v); err != nil {
 		return errors.New("invalid package.json")
 	}
 	// build params
@@ -770,38 +649,17 @@ func (s *Script) ConfigDeps() error {
 }
 
 // Execute executes the script.
-func (s *Script) Execute() error {
-	var err error
+func (s *Script) Execute(dist *pack.Pack) error {
 	for _, f := range s.exec {
-		if err = f(); err != nil {
+		if err := f(dist); err != nil {
 			return err
 		}
 	}
-	// write generated assets
-	if err = s.dist.WriteTo(filepath.Join(s.flags.Assets, assetsFile), "Assets"); err != nil {
-		return err
-	}
-	// build manifest and reverse manifest
-	manifest, err := s.dist.Manifest()
-	if err != nil {
-		return err
-	}
-	rev := make(map[string]string, len(manifest))
-	for k, v := range manifest {
-		rev[v] = k
-	}
-	// build and write manifest.go
-	src := tplf("manifest.go") + tplf("manifest.go.extra", manifest, rev)
-	if !strings.HasPrefix(src, "package assets\n") {
-		panic("invalid manifest.go")
-	}
-	src = "package " + filepath.Base(s.flags.Assets) + strings.TrimPrefix(src, "package assets")
-	// TODO: do go imports here -- currently imports.Process isn't working properly with large set of assets.
-	return ioutil.WriteFile(filepath.Join(s.flags.Assets, "manifest.go"), []byte(src), 0644)
+	return nil
 }
 
 // startCallbackServer creates and starts the IPC callback server.
-func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
+func (s *Script) startCallbackServer(ctxt context.Context, dist *pack.Pack) (string, error) {
 	cbs, err := NewIpcServer(map[string]func(...interface{}) (interface{}, error){
 		// asset($url) converts the passed url to a static path.
 		"asset($url)": func(v ...interface{}) (interface{}, error) {
@@ -825,7 +683,7 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 				qstr, z = z[i:], z[:i]
 			}
 			// grab manifest
-			m, err := s.dist.Manifest()
+			m, err := dist.Manifest()
 			if err != nil {
 				return nil, fmt.Errorf("unable to load manifest: %w", err)
 			}
@@ -850,7 +708,7 @@ func (s *Script) startCallbackServer(ctxt context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err = cbs.Run(ctxt); err != nil {
+	if err := cbs.Run(ctxt); err != nil {
 		return "", err
 	}
 	return cbs.SocketPath(), nil
@@ -899,13 +757,12 @@ func (s *Script) findNodeModulesFile(jd jsdep) (string, error) {
 // fixNodeModulesBinLinks walks all packages in flags.NodeModules, reading their bin entries from
 // package.json, and creating the appropriate symlink in flags.NodeModulesBin.
 func fixNodeModulesBinLinks(flags *Flags) error {
-	var err error
 	// ensure directory exists
-	if err = checkDirs(flags, &flags.NodeModulesBin); err != nil {
+	if err := checkDirs(flags, &flags.NodeModulesBin); err != nil {
 		return fmt.Errorf("unable to fix node_modules/.bin: %w", err)
 	}
 	// erase all links in bin dir
-	err = filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
+	err := filepath.Walk(flags.NodeModulesBin, func(path string, fi os.FileInfo, err error) error {
 		switch {
 		case err != nil:
 			return err
@@ -914,7 +771,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 		case fi.Mode()&os.ModeSymlink == 0:
 			return fmt.Errorf("%s is not a symlink", path)
 		}
-		if err = os.Remove(path); err != nil {
+		if err := os.Remove(path); err != nil {
 			return fmt.Errorf("unable to remove %s: %w", path, err)
 		}
 		return nil
@@ -943,8 +800,7 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 			Name string      `json:"name"`
 			Bin  interface{} `json:"bin"`
 		}
-		err = json.Unmarshal(buf, &pkgDesc)
-		if err != nil {
+		if err := json.Unmarshal(buf, &pkgDesc); err != nil {
 			warnf(flags, "could not unmarshal %s: %w", path, err)
 			return nil
 		}
@@ -993,12 +849,12 @@ func fixNodeModulesBinLinks(flags *Flags) error {
 			return err
 		}
 		// symlink
-		if err = os.Symlink(oldname, newname); err != nil {
+		if err := os.Symlink(oldname, newname); err != nil {
 			return fmt.Errorf("unable to symlink %s to %s: %w", newname, oldname, err)
 		}
 		// fix permissions
 		if runtime.GOOS != "windows" {
-			if err = os.Chmod(linkpath, 0755); err != nil {
+			if err := os.Chmod(linkpath, 0755); err != nil {
 				return err
 			}
 		}

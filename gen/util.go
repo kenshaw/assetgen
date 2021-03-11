@@ -7,10 +7,10 @@ import (
 	"compress/gzip"
 	"crypto/md5"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -23,8 +23,6 @@ import (
 	"unicode"
 
 	"github.com/Masterminds/semver"
-	"github.com/shurcooL/httpfs/vfsutil"
-	"github.com/shurcooL/httpgzip"
 )
 
 // infof handles logging information.
@@ -109,8 +107,7 @@ func concat(files []string, out string) error {
 			return err
 		}
 		// append to buf
-		_, err = buf.Write(b)
-		if err != nil {
+		if _, err := buf.Write(b); err != nil {
 			return err
 		}
 	}
@@ -230,14 +227,13 @@ func htmlmin(flags *Flags, buf []byte) ([]byte, error) {
 		return nil, err
 	}
 	defer out.Close()
-	if err = cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
-	buf, err = ioutil.ReadAll(out)
-	if err != nil {
+	if buf, err = ioutil.ReadAll(out); err != nil {
 		return nil, err
 	}
-	if err = cmd.Wait(); err != nil {
+	if err := cmd.Wait(); err != nil {
 		return nil, err
 	}
 	return buf, nil
@@ -268,46 +264,27 @@ func md5hash(file string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	sum := md5.Sum(buf)
-	return hex.EncodeToString(sum[:]), nil
+	return fmt.Sprintf("%x", md5.Sum(buf)), nil
 }
 
 // templates are loaded file assets used by assetgen.
-var templates map[string]string
+var templates map[string][]byte
 
 func init() {
 	// walk and add all template assets
-	templates = make(map[string]string)
-	err := vfsutil.Walk(files, "/", func(n string, fi os.FileInfo, err error) error {
+	templates = make(map[string][]byte)
+	err := fs.WalkDir(tpl, "tpl", func(n string, d fs.DirEntry, err error) error {
 		switch {
 		case err != nil:
 			return err
-		case fi.IsDir():
+		case d.IsDir():
 			return nil
 		}
-		f, err := files.Open(n)
+		buf, err := tpl.ReadFile(n)
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		var buf []byte
-		switch x := f.(type) {
-		case httpgzip.GzipByter:
-			r, err := gzip.NewReader(bytes.NewReader(x.GzipBytes()))
-			if err != nil {
-				return err
-			}
-			buf, err = ioutil.ReadAll(r)
-			if err != nil {
-				return err
-			}
-		case httpgzip.NotWorthGzipCompressing:
-			buf, err = ioutil.ReadAll(f)
-			if err != nil {
-				return err
-			}
-		}
-		templates[strings.TrimPrefix(n, "/")] = string(buf)
+		templates[filepath.Base(n)] = buf
 		return nil
 	})
 	if err != nil {
@@ -317,11 +294,11 @@ func init() {
 
 // tplf loads the named template, and fmt.Sprintf's v.
 func tplf(name string, v ...interface{}) string {
-	tpl, ok := templates[name]
+	t, ok := templates[name]
 	if !ok {
 		panic(fmt.Sprintf("could not load template: %s", name))
 	}
-	return fmt.Sprintf(tpl, v...)
+	return fmt.Sprintf(string(t), v...)
 }
 
 // fileExists returns true if name exists on disk.
@@ -371,13 +348,13 @@ func getAndCache(flags *Flags, urlstr string, ttl time.Duration, b64decode bool,
 	}
 	// decode
 	if b64decode {
-		buf, err = base64.StdEncoding.DecodeString(string(buf))
-		if err != nil {
+		var err error
+		if buf, err = base64.StdEncoding.DecodeString(string(buf)); err != nil {
 			return nil, err
 		}
 	}
 	// write
-	if err = ioutil.WriteFile(n, buf, 0644); err != nil {
+	if err := ioutil.WriteFile(n, buf, 0644); err != nil {
 		return nil, err
 	}
 	return buf, nil
@@ -410,7 +387,7 @@ func extractZip(dir string, buf []byte, chop string) error {
 		fi := z.FileInfo()
 		switch {
 		case fi.IsDir():
-			if err = os.MkdirAll(n, fi.Mode()); err != nil {
+			if err := os.MkdirAll(n, fi.Mode()); err != nil {
 				return err
 			}
 		default:
@@ -422,13 +399,13 @@ func extractZip(dir string, buf []byte, chop string) error {
 			if err != nil {
 				return err
 			}
-			if _, err = io.Copy(f, fr); err != nil {
+			if _, err := io.Copy(f, fr); err != nil {
 				return err
 			}
-			if err = f.Close(); err != nil {
+			if err := f.Close(); err != nil {
 				return err
 			}
-			if err = fr.Close(); err != nil {
+			if err := fr.Close(); err != nil {
 				return err
 			}
 		}
@@ -457,7 +434,7 @@ loop:
 		switch h.Typeflag {
 		case tar.TypeDir:
 			// create dir
-			if err = os.MkdirAll(n, h.FileInfo().Mode()); err != nil {
+			if err := os.MkdirAll(n, h.FileInfo().Mode()); err != nil {
 				return err
 			}
 		case tar.TypeReg:
@@ -466,19 +443,19 @@ loop:
 			if err != nil {
 				return err
 			}
-			if _, err = io.Copy(f, r); err != nil {
+			if _, err := io.Copy(f, r); err != nil {
 				return err
 			}
-			if err = f.Close(); err != nil {
+			if err := f.Close(); err != nil {
 				return err
 			}
 		case tar.TypeSymlink:
 			// check that symlink is contained in dir and link
 			p := filepath.Clean(filepath.Join(filepath.Dir(n), h.Linkname))
-			if _, err = filepath.Rel(dir, p); err != nil {
+			if _, err := filepath.Rel(dir, p); err != nil {
 				return fmt.Errorf("could not make tar symlink %q relative to %s", h.Linkname, dir)
 			}
-			if err = os.Symlink(p, n); err != nil {
+			if err := os.Symlink(p, n); err != nil {
 				return fmt.Errorf("could not create symlink for %q: %w", n, err)
 			}
 		default:
@@ -506,7 +483,7 @@ func githubLatestAssets(flags *Flags, repo, dir string) (string, []githubAsset, 
 		Name   string        `json:"name"`
 		Assets []githubAsset `json:"assets"`
 	}
-	if err = json.Unmarshal(buf, &release); err != nil {
+	if err := json.Unmarshal(buf, &release); err != nil {
 		return "", nil, err
 	}
 	return release.Name, release.Assets, nil

@@ -3,33 +3,33 @@ package pack
 import (
 	"bytes"
 	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/ioutil"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 
-	"github.com/shurcooL/vfsgen"
 	"github.com/spf13/afero"
+	"github.com/yookoala/realpath"
 )
 
-// Pack handles packing binary assets into a Go package.
+// Pack packs file assets.
 type Pack struct {
-	fs  afero.Fs
-	h   map[string]string
-	pkg string
+	fs       afero.Fs
+	h        map[string]string
+	manifest string
 	sync.RWMutex
 }
 
-// New creates a new binary asset packer with the specified pkg name.
-func New(opts ...Option) *Pack {
+// New creates a new asset packer.
+func New(fs afero.Fs, opts ...Option) *Pack {
 	p := &Pack{
-		fs: afero.NewMemMapFs(),
-		h:  make(map[string]string),
+		fs:       fs,
+		h:        make(map[string]string),
+		manifest: "manifest.json",
 	}
 	for _, o := range opts {
 		o(p)
@@ -37,8 +37,20 @@ func New(opts ...Option) *Pack {
 	return p
 }
 
-// Add adds a file with name to pack from r.
-func (p *Pack) Add(name string, r io.Reader) error {
+// NewBase creates a new asset packer for the base path.
+func NewBase(base string, opts ...Option) (*Pack, error) {
+	base, err := realpath.Realpath(base)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(base, 0755); err != nil {
+		return nil, err
+	}
+	return New(afero.NewBasePathFs(afero.NewOsFs(), base), opts...), nil
+}
+
+// Pack packs a file with name copying the contents from r.
+func (p *Pack) Pack(name string, r io.Reader) error {
 	p.Lock()
 	defer p.Unlock()
 	name = "/" + strings.TrimLeft(name, "/")
@@ -46,45 +58,38 @@ func (p *Pack) Add(name string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	err = p.fs.MkdirAll(filepath.Dir(name), 0755)
-	if err != nil {
+	if err := p.fs.MkdirAll(filepath.Dir(name), 0755); err != nil {
 		return err
 	}
-	f, err := p.fs.Create(name)
-	if err != nil {
+	if err := afero.WriteFile(p.fs, name, buf, 0644); err != nil {
 		return err
 	}
-	defer f.Close()
-	_, err = f.Write(buf)
-	if err != nil {
-		return err
-	}
-	h := md5.Sum(buf)
-	p.h[name] = hex.EncodeToString(h[:])
+	p.h[name] = fmt.Sprintf("%x", md5.Sum(buf))
 	return nil
 }
 
-// AddFile adds a file with name to the output with the contents of the file at path.
-func (p *Pack) AddFile(name string, path string) error {
+// PackBytes packs a file with name with contents of buf.
+func (p *Pack) PackBytes(name string, buf []byte) error {
+	return p.Pack(name, bytes.NewReader(buf))
+}
+
+// PackString packs a file with name with contents of s.
+func (p *Pack) PackString(name string, s string) error {
+	return p.Pack(name, strings.NewReader(s))
+}
+
+// PackFile packs a file with name with the contents read from the specified
+// path.
+func (p *Pack) PackFile(name, path string) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
-	return p.Add(name, f)
+	return p.Pack(name, f)
 }
 
-// AddBytes adds a file with name to the output from buf.
-func (p *Pack) AddBytes(name string, buf []byte) error {
-	return p.Add(name, bytes.NewReader(buf))
-}
-
-// AddString adds a file with name to the output from s.
-func (p *Pack) AddString(name string, s string) error {
-	return p.Add(name, strings.NewReader(s))
-}
-
-// Manifest returns a manifest of the packed file data.
+// Manifest returns a manifest of the packed files.
 func (p *Pack) Manifest() (map[string]string, error) {
 	p.RLock()
 	defer p.RUnlock()
@@ -93,11 +98,10 @@ func (p *Pack) Manifest() (map[string]string, error) {
 		switch {
 		case err != nil:
 			return err
-		case fi.IsDir():
+		case fi.IsDir() || filepath.Base(n) == p.manifest:
 			return nil
 		}
-		h := md5.Sum([]byte(strings.TrimLeft(n, "/")))
-		fh := hex.EncodeToString(h[:])
+		fh := fmt.Sprintf("%x", md5.Sum([]byte(strings.TrimLeft(n, "/"))))
 		m[n] = fh[:6] + "." + p.h[n][:6] + filepath.Ext(n)
 		return nil
 	})
@@ -105,6 +109,19 @@ func (p *Pack) Manifest() (map[string]string, error) {
 		return nil, err
 	}
 	return m, nil
+}
+
+// ManifestInverted returns a manifest of the packed files (inverted).
+func (p *Pack) ManifestInverted() (map[string]string, error) {
+	m, err := p.Manifest()
+	if err != nil {
+		return nil, err
+	}
+	rev := make(map[string]string, len(m))
+	for v, k := range m {
+		rev[k] = v
+	}
+	return rev, nil
 }
 
 // ManifestBytes returns a JSON-encoded version of the file manifest.
@@ -116,25 +133,40 @@ func (p *Pack) ManifestBytes() ([]byte, error) {
 	return json.MarshalIndent(m, "", "  ")
 }
 
-// WriteTo writes to the specified out file, with the specified variable name.
-func (p *Pack) WriteTo(out, name string) error {
-	p.RLock()
-	defer p.RUnlock()
-	pkg := p.pkg
-	if pkg == "" {
-		pkg = filepath.Base(filepath.Dir(out))
+// ManifestInvertedBytes returns a JSON-encoded version of the file manifest
+// (inverted).
+func (p *Pack) ManifestInvertedBytes() ([]byte, error) {
+	m, err := p.ManifestInverted()
+	if err != nil {
+		return nil, err
 	}
-	return vfsgen.Generate(p, vfsgen.Options{
-		VariableName:  name,
-		Filename:      out,
-		PackageName:   pkg,
-		ForceAllTypes: true,
-	})
+	return json.MarshalIndent(m, "", "  ")
 }
 
-// Open satisfies the http.FileSystem interface.
-func (p *Pack) Open(name string) (http.File, error) {
-	p.RLock()
-	defer p.RUnlock()
-	return p.fs.Open(name)
+// WriteManifest writes the file manifest.
+func (p *Pack) WriteManifest() error {
+	buf, err := p.ManifestBytes()
+	if err != nil {
+		return err
+	}
+	return afero.WriteFile(p.fs, p.manifest, buf, 0644)
+}
+
+// WriteManifestInverted writes the file manifest (inverted).
+func (p *Pack) WriteManifestInverted() error {
+	buf, err := p.ManifestInvertedBytes()
+	if err != nil {
+		return err
+	}
+	return afero.WriteFile(p.fs, p.manifest, buf, 0644)
+}
+
+// Option is an asset packer option.
+type Option func(*Pack)
+
+// WithManifest is an asset packer option to set the manifest name.
+func WithManifest(manifest string) Option {
+	return func(p *Pack) {
+		p.manifest = manifest
+	}
 }

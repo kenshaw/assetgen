@@ -1,0 +1,4 @@
+/dist/
+/assets.go
+/templates/*.html.go
+*.mo

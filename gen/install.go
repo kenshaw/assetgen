@@ -5,7 +5,6 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -58,7 +57,7 @@ func installNode(flags *Flags) (string, string, error) {
 		return nodePath, binPath, nil
 	}
 	// remove existing directory
-	if err = os.RemoveAll(nodePath); err != nil {
+	if err := os.RemoveAll(nodePath); err != nil {
 		return "", "", fmt.Errorf("could not remove %q: %w", nodePath, err)
 	}
 	// retrieve archive
@@ -67,7 +66,7 @@ func installNode(flags *Flags) (string, string, error) {
 		return "", "", fmt.Errorf("could not retrieve node %s (%s): %w", v, platform, err)
 	}
 	// extract archive
-	if err = extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
+	if err := extractArchive(nodePath, buf, ext, fmt.Sprintf("node-%s-%s", v, platform)+"/"); err != nil {
 		return "", "", fmt.Errorf("unable to extract node %s (%s): %w", v, platform, err)
 	}
 	return nodePath, binPath, nil
@@ -100,7 +99,7 @@ func getNodeLtsVersion(flags *Flags) (string, error) {
 	}
 	// parse node versions
 	var nodeVersions []nodeVersion
-	if err = json.Unmarshal(verBuf, &nodeVersions); err != nil {
+	if err := json.Unmarshal(verBuf, &nodeVersions); err != nil {
 		return "", fmt.Errorf("node versions.json is invalid: %w", err)
 	}
 	if len(nodeVersions) < 1 {
@@ -145,8 +144,7 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 	if err != nil {
 		return nil, err
 	}
-	_, err = openpgp.CheckDetachedSignature(kr, bytes.NewReader(txt), bytes.NewReader(sig))
-	if err != nil {
+	if _, err := openpgp.CheckDetachedSignature(kr, bytes.NewReader(txt), bytes.NewReader(sig)); err != nil {
 		return nil, fmt.Errorf("could not verify signature: %w", err)
 	}
 	// get node
@@ -155,8 +153,7 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 		return nil, err
 	}
 	// verify hash
-	h := sha256.Sum256(buf)
-	hash := hex.EncodeToString(h[:])
+	hash := fmt.Sprintf("%x", sha256.Sum256(buf))
 	scanner := bufio.NewScanner(bytes.NewReader(txt))
 	var found bool
 	for scanner.Scan() {
@@ -166,7 +163,7 @@ func getNodeAndVerify(flags *Flags, version, platform, ext string) ([]byte, erro
 		}
 		found = found || (line[0] == hash && line[1] == fn)
 	}
-	if err = scanner.Err(); err != nil {
+	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("could not read SHASUMS256.txt: %w", err)
 	}
 	if !found {
@@ -207,7 +204,7 @@ func installYarn(flags *Flags) (string, string, error) {
 		return yarnPath, binPath, nil
 	}
 	// remove existing directory
-	if err = os.RemoveAll(yarnPath); err != nil {
+	if err := os.RemoveAll(yarnPath); err != nil {
 		return "", "", fmt.Errorf("could not remove %q: %w", yarnPath, err)
 	}
 	// retrieve archive
@@ -216,11 +213,11 @@ func installYarn(flags *Flags) (string, string, error) {
 		return "", "", fmt.Errorf("could not retrieve yarn %s: %w", v, err)
 	}
 	// create dir
-	if err = os.MkdirAll(yarnPath, 0755); err != nil {
+	if err := os.MkdirAll(yarnPath, 0755); err != nil {
 		return "", "", fmt.Errorf("could not create yarn %s directory: %w", v, err)
 	}
 	// extract archive
-	if err = extractTarGz(yarnPath, buf, fmt.Sprintf("yarn-%s", v)); err != nil {
+	if err := extractTarGz(yarnPath, buf, fmt.Sprintf("yarn-%s", v)); err != nil {
 		return "", "", fmt.Errorf("unable to extract yarn %s: %w", v, err)
 	}
 	return yarnPath, binPath, nil
@@ -230,20 +227,19 @@ func installYarn(flags *Flags) (string, string, error) {
 // version, and verifies it against the accompanying .asc file.
 func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byte, error) {
 	n := fmt.Sprintf("yarn-%v.tar.gz", version)
-	var err error
 	var buf, asc []byte
 	for _, a := range assets {
 		switch {
 		// grab tar.gz
 		case a.Name == n:
-			buf, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n)
-			if err != nil {
+			var err error
+			if buf, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n); err != nil {
 				return nil, err
 			}
 		// grab signature
 		case a.Name == n+".asc":
-			asc, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n+".asc")
-			if err != nil {
+			var err error
+			if asc, err = getAndCache(flags, a.BrowserDownloadURL, 0, false, "yarn", n+".asc"); err != nil {
 				return nil, err
 			}
 		}
@@ -253,8 +249,8 @@ func getYarnAndVerify(flags *Flags, version string, assets []githubAsset) ([]byt
 	if err != nil {
 		return nil, err
 	}
-	_, err = openpgp.CheckArmoredDetachedSignature(kr, bytes.NewReader(buf), bytes.NewReader(asc))
-	if err != nil {
+
+	if _, err := openpgp.CheckArmoredDetachedSignature(kr, bytes.NewReader(buf), bytes.NewReader(asc)); err != nil {
 		return nil, fmt.Errorf("could not verify signature: %w", err)
 	}
 	return buf, nil
@@ -294,10 +290,10 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 	}
 	// remove and create build/fontawesome
 	dir := filepath.Join(flags.Build, "fontawesome")
-	if err = os.RemoveAll(dir); err != nil {
+	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("could not remove fontawesome build directory: %w", err)
 	}
-	if err = os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("could not create fontawesome build directory: %w", err)
 	}
 	r, err := zip.NewReader(bytes.NewReader(buf), int64(len(buf)))
@@ -323,10 +319,10 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 				bn = "fontawesome-" + bn
 			}
 			out := filepath.Join(dir, bn)
-			if err = ioutil.WriteFile(out, sbuf, 0644); err != nil {
+			if err := ioutil.WriteFile(out, sbuf, 0644); err != nil {
 				return fmt.Errorf("could not write fontawesome file %s: %w", out, err)
 			}
-			if err = fr.Close(); err != nil {
+			if err := fr.Close(); err != nil {
 				return err
 			}
 		case strings.HasPrefix(z.Name, n+"/webfonts/") && webfontRE.MatchString(z.Name):
@@ -338,10 +334,10 @@ func installFontAwesome(flags *Flags, dist *pack.Pack) error {
 			if err != nil {
 				return err
 			}
-			if err = dist.AddBytes("/webfonts/"+filepath.Base(z.Name), wbuf); err != nil {
+			if err := dist.PackBytes("/webfonts/"+filepath.Base(z.Name), wbuf); err != nil {
 				return err
 			}
-			if err = fr.Close(); err != nil {
+			if err := fr.Close(); err != nil {
 				return err
 			}
 		}

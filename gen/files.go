@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/kenshaw/assetgen/pack"
 )
 
 // setupFiles creates default files when they do not already exist.
 func setupFiles(flags *Flags) error {
-	var err error
 	app := filepath.Base(flags.Wd)
 	// build relative cache paths
 	var cacheList string
@@ -28,8 +30,7 @@ func setupFiles(flags *Flags) error {
 		{filepath.Join(flags.Assets, ".gitignore"), tplf("gitignore")},
 		{filepath.Join(flags.Assets, scriptName), tplf("assets.anko")},
 	} {
-		err = writeCond(d.path, d.contents)
-		if err != nil {
+		if err := writeCond(d.path, d.contents); err != nil {
 			return fmt.Errorf("unable to setup %s: %w", d.path, err)
 		}
 	}
@@ -89,4 +90,33 @@ func writeCond(path, contents string) error {
 		return errors.New("must not be a directory")
 	}
 	return nil
+}
+
+// writeAssetsGo generates the assets.go for the packed assets.
+func writeAssetsGo(flags *Flags, dist *pack.Pack) error {
+	// write manifest
+	if err := dist.WriteManifestInverted(); err != nil {
+		return fmt.Errorf("unable to write manifest: %w", err)
+	}
+	distshort := strings.TrimPrefix(flags.Dist, flags.Assets+"/")
+	// build asset list
+	manifest, err := dist.Manifest()
+	if err != nil {
+		return fmt.Errorf("unable to load manifest: %w", err)
+	}
+	var assets []string
+	for k := range manifest {
+		assets = append(assets, k)
+	}
+	sort.Strings(assets)
+	for i := 0; i < len(assets); i++ {
+		assets[i] = `//go:embed ` + path.Join(distshort, assets[i])
+	}
+	assets = append([]string{`//go:embed ` + path.Join(distshort, flags.PackManifest)}, assets...)
+	// write assets.go
+	return ioutil.WriteFile(
+		filepath.Join(flags.Assets, assetsFile),
+		[]byte(tplf(assetsFile, strings.Join(assets, "\n"), distshort, flags.PackManifest)),
+		0644,
+	)
 }
