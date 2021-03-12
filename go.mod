@@ -13,5 +13,3 @@ require (
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/text v0.3.5 // indirect
 )
-
-replace github.com/shurcooL/vfsgen => github.com/kenshaw/vfsgen v0.1.0
