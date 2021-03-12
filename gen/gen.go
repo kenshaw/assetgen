@@ -33,7 +33,6 @@ const (
 	sassDir           = "sass"
 	cssDir            = "css"
 	sassJs            = "sass.js"
-	postcssJs         = "postcss.config.js"
 	assetgenScss      = "_assetgen.scss"
 	templatesDir      = "templates"
 	nodeDistURL       = "https://nodejs.org/dist"

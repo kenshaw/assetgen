@@ -427,10 +427,7 @@ func (s *Script) addSass(_, dir string) {
 		"autoprefixer",
 		"clean-css-cli",
 		"deasync",
-		"@fullhuman/postcss-purgecss",
 		"node-sass",
-		"postcss",
-		"postcss-cli",
 		"tailwindcss",
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
@@ -447,20 +444,13 @@ func (s *Script) addSass(_, dir string) {
 				return fmt.Errorf("could not generate tailwind css config: %w", err)
 			}
 		}
-		// write sass.js, postcss.config.js, and _assetgen.scss to build dir
+		// write sass.js and _assetgen.scss to build dir
 		if err := ioutil.WriteFile(
 			filepath.Join(s.flags.Build, sassJs),
 			[]byte(tplf(sassJs)),
 			0644,
 		); err != nil {
 			return fmt.Errorf("could not write %s: %w", sassJs, err)
-		}
-		if err := ioutil.WriteFile(
-			filepath.Join(s.flags.Build, postcssJs),
-			[]byte(tplf(postcssJs, tailwindJs, filepath.Join(s.flags.Assets, templatesDir))),
-			0644,
-		); err != nil {
-			return fmt.Errorf("could not write %s: %w", postcssJs, err)
 		}
 		if err := ioutil.WriteFile(
 			filepath.Join(s.flags.Build, "assetgen", assetgenScss),
@@ -515,19 +505,18 @@ func (s *Script) addSass(_, dir string) {
 			if err := run(s.flags, "node-sass", append(params, n)...); err != nil {
 				return fmt.Errorf("could not run node-sass: %w", err)
 			}
-			postCss := filepath.Join(s.flags.Build, cssDir, fn+".postcss.css")
+			tailwindCss := filepath.Join(s.flags.Build, cssDir, fn+".tailwind.css")
 			cleanCss := filepath.Join(s.flags.Build, cssDir, fn+".cleancss.css")
 			finalCss := filepath.Join(s.flags.Build, cssDir, fn+".final.css")
-			// postcss
+			// tailwind
 			if err := run(
 				s.flags,
-				"postcss",
-				"--config="+filepath.Join(s.flags.Build, postcssJs),
-				"--map",
-				"--output="+postCss,
+				"tailwindcss-cli",
+				"build",
 				filepath.Join(s.flags.Build, cssDir, fn+".css"),
+				"-o", tailwindCss,
 			); err != nil {
-				return fmt.Errorf("could not run postcss: %w", err)
+				return fmt.Errorf("could not run tailwind: %w", err)
 			}
 			// cleancss
 			if err := runSilent(
@@ -538,7 +527,7 @@ func (s *Script) addSass(_, dir string) {
 				"--inline", "all",
 				"--source-map",
 				"--output="+cleanCss,
-				postCss,
+				tailwindCss,
 			); err != nil {
 				return fmt.Errorf("could not run cleancss: %w", err)
 			}
