@@ -424,13 +424,14 @@ var stripCssCommentsRE = regexp.MustCompile(`/\*!.+\*/`)
 // appropriate css after compiling, prefixing, and minifying.
 func (s *Script) addSass(_, dir string) {
 	for _, n := range []string{
-		"node-sass",
-		"tailwindcss",
-		"postcss-cli",
 		"autoprefixer",
-		"@fullhuman/postcss-purgecss",
 		"clean-css-cli",
 		"deasync",
+		"@fullhuman/postcss-purgecss",
+		"node-sass",
+		"postcss",
+		"postcss-cli",
+		"tailwindcss",
 	} {
 		s.nodeDeps = append(s.nodeDeps, dep{n, ""})
 	}
@@ -536,7 +537,6 @@ func (s *Script) addSass(_, dir string) {
 				"-O2",
 				"--inline", "all",
 				"--source-map",
-				"--skip-rebase",
 				"--output="+cleanCss,
 				postCss,
 			); err != nil {
