@@ -9,7 +9,7 @@ require (
 	github.com/spf13/afero v1.6.0
 	github.com/valyala/quicktemplate v1.6.3
 	github.com/yookoala/realpath v1.0.0
-	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
-	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/text v0.3.6 // indirect
+	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
+	golang.org/x/text v0.3.8 // indirect
 )
